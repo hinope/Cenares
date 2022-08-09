@@ -1,0 +1,2253 @@
+USE [SIGA_1345]
+GO
+/****** Object:  StoredProcedure [dbo].[SP_WMS_CONSULTA_NEA]    Script Date: 11/07/2022 20:22:18 ******/
+SET ANSI_NULLS ON
+GO
+SET QUOTED_IDENTIFIER ON
+GO
+
+ALTER PROCEDURE [dbo].[SP_WMS_CONSULTA_NEA](
+	@I_ANO_EJE int,
+	@I_SEC_EJEC int,
+	@I_TIPO_TRANSAC int,
+	@I_NRO_REQUERIM INT
+	
+)
+AS
+BEGIN
+
+SELECT A.*,B.NRO_RUC FROM 
+(
+		SELECT ANO_EJE,NRO_REQUERIM,FECHA_REQUERIM,NOMBRE_PROVEEDOR,GRUPO_BIEN,CLASE_BIEN,FAMILIA_BIEN,ITEM_BIEN,TIPO_MARCA,
+			MARCA,ESPECIFICACIONES,UNIDAD_MEDIDA,ACTIVO_FIJO,NOMBRE_ITEM,CANT_ARTICULO,PRECIO_UNIT,
+			(CANT_ARTICULO - CANT_USADA) CANT_DISPONIBLE,valor_total - ( round(Coalesce(CANT_USADA,0)*precio_unit,2))  VALOR_TOTAL,
+			SEC_REQUERIM
+
+		FROM(
+		SELECT EAL.ANO_EJE,EAL.NRO_REQUERIM,EAL.FECHA_REQUERIM,EAL.NOMBRE_PROVEEDOR,EAD.GRUPO_BIEN,EAD.CLASE_BIEN,
+			EAD.FAMILIA_BIEN,EAD.ITEM_BIEN,EAD.TIPO_MARCA,EAD.MARCA,EAD.ESPECIFICACIONES,EAD.UNIDAD_MEDIDA,
+			EAD.ACTIVO_FIJO,CBS.NOMBRE_ITEM,EAD.PRECIO_UNIT,EAD.CANT_ARTICULO,EAD.VALOR_TOTAL,
+
+			COALESCE((
+				SELECT SUM(DMA.CANT_RECIBIDO)
+				FROM SIG_MOVIM_ALMACEN SMA
+				JOIN SIG_DETALLE_MOVIM_ALMACEN  DMA
+					ON DMA.SEC_EJEC = SMA.SEC_EJEC
+					AND DMA.ANO_EJE = SMA.ANO_EJE
+					AND DMA.ALMACEN = SMA.ALMACEN
+					AND DMA.SEC_ALMACEN = SMA.SEC_ALMACEN
+					AND DMA.TIPO_MOVIMTO = SMA.TIPO_MOVIMTO
+					AND DMA.TIPO_TRANSAC = SMA.TIPO_TRANSAC
+					AND DMA.TIPO_PPTO = SMA.TIPO_PPTO
+					AND DMA.NRO_MOVIMTO = SMA.NRO_MOVIMTO
+
+				WHERE SMA.ANO_EJE = EAL.ANO_EJE
+					AND SMA.SEC_EJEC = EAL.SEC_EJEC
+					AND SMA.TIPO_MOVIMTO = EAL.TIPO_MOVIMTO
+					AND SMA.TIPO_TRANSAC = EAL.TIPO_TRANSAC
+					AND SMA.NRO_REQUERIM = EAL.NRO_REQUERIM
+					AND SMA.TIPO_MOVIMTO = EAL.TIPO_MOVIMTO
+					AND SMA.TIPO_TRANSAC = EAL.TIPO_TRANSAC
+					AND DMA.TIPO_BIEN = EAD.TIPO_BIEN
+					AND DMA.GRUPO_BIEN = EAD.GRUPO_BIEN
+					AND DMA.CLASE_BIEN = EAD.CLASE_BIEN
+					AND DMA.FAMILIA_BIEN = EAD.FAMILIA_BIEN
+					AND DMA.ITEM_BIEN = EAD.ITEM_BIEN
+					AND DMA.MARCA = EAD.MARCA
+
+			), 0) CANT_USADA,
+			EAD.SEC_REQUERIM
+	
+		FROM SIG_REQ_ENTRADA_ALMACEN EAL
+		JOIN SIG_REQ_ENTRADA_ALMACEN_DET EAD
+			ON EAD.SEC_EJEC = EAL.SEC_EJEC
+			AND EAD.ANO_EJE = EAL.ANO_EJE
+			AND EAD.NRO_REQUERIM = EAL.NRO_REQUERIM
+		LEFT JOIN CATALOGO_BIEN_SERV CBS
+			ON CBS.SEC_EJEC = EAD.SEC_EJEC
+			AND CBS.TIPO_BIEN = EAD.TIPO_BIEN
+			AND CBS.GRUPO_BIEN = EAD.GRUPO_BIEN
+			AND CBS.CLASE_BIEN = EAD.CLASE_BIEN
+			AND CBS.FAMILIA_BIEN = EAD.FAMILIA_BIEN
+			AND CBS.ITEM_BIEN = EAD.ITEM_BIEN
+
+		WHERE EAL.ANO_EJE = @I_ANO_EJE
+			AND EAL.SEC_EJEC = @I_SEC_EJEC
+			AND EAL.TIPO_TRANSAC = @I_TIPO_TRANSAC
+			AND EAL.TIPO_MOVIMTO='R'
+			AND EAL.NRO_REQUERIM=@I_NRO_REQUERIM
+			AND EAL.ESTADO = 2 /* 2= VB HJefe */
+			AND (EAL.FLAG_RECEPCION IS NULL OR EAL.FLAG_RECEPCION = 'P') /* P=Parcial */
+			AND (0 = 0 OR EAL.NRO_REQUERIM = 0)
+		) T WHERE
+			T.CANT_ARTICULO - T.CANT_USADA > 0
+	
+		) A
+		LEFT JOIN SIG_CONTRATISTAS B
+		ON A.NOMBRE_PROVEEDOR = B.NOMBRE_PROV
+
+
+
+END
+
+
+USE [SIGA_1345]
+GO
+/****** Object:  StoredProcedure [dbo].[SP_WMS_CONSULTA_NEA_DETALLE]    Script Date: 11/07/2022 20:22:20 ******/
+SET ANSI_NULLS ON
+GO
+SET QUOTED_IDENTIFIER ON
+GO
+ALTER PROCEDURE [dbo].[SP_WMS_CONSULTA_NEA_DETALLE](
+	@I_ANO_EJE int,
+	@I_SEC_EJEC int,
+	@I_NRO_REQUERIM INT
+	
+)
+AS
+BEGIN
+
+--select *  from SIG_REQ_ENTRADA_ALMACEN_DET 
+SELECT	*,SIG_REQ_ENTRADA_ALMACEN_DET.ANO_EJE, SIG_REQ_ENTRADA_ALMACEN_DET.NRO_REQUERIM, 
+		SIG_REQ_ENTRADA_ALMACEN_DET.SEC_REQUERIM, 
+		CONCAT(SIG_REQ_ENTRADA_ALMACEN_DET.GRUPO_BIEN, SIG_REQ_ENTRADA_ALMACEN_DET.CLASE_BIEN, 
+		SIG_REQ_ENTRADA_ALMACEN_DET.FAMILIA_BIEN, SIG_REQ_ENTRADA_ALMACEN_DET.ITEM_BIEN) ITEM_CODE,
+		SIG_REQ_ENTRADA_ALMACEN_DET.UNIDAD_MEDIDA, SIG_REQ_ENTRADA_ALMACEN_DET.CANT_ARTICULO, 
+		SIG_REQ_ENTRADA_ALMACEN_DET.PRECIO_UNIT, SIG_REQ_ENTRADA_ALMACEN_DET.VALOR_TOTAL,
+		(SELECT NOMBRE_ITEM FROM CATALOGO_BIEN_SERV WHERE 
+		CONCAT(CATALOGO_BIEN_SERV.GRUPO_BIEN, CATALOGO_BIEN_SERV.CLASE_BIEN, 
+		CATALOGO_BIEN_SERV.FAMILIA_BIEN, CATALOGO_BIEN_SERV.ITEM_BIEN) =
+		CONCAT(SIG_REQ_ENTRADA_ALMACEN_DET.GRUPO_BIEN, SIG_REQ_ENTRADA_ALMACEN_DET.CLASE_BIEN, 
+		SIG_REQ_ENTRADA_ALMACEN_DET.FAMILIA_BIEN, SIG_REQ_ENTRADA_ALMACEN_DET.ITEM_BIEN)) sProducto
+from SIG_REQ_ENTRADA_ALMACEN_DET
+	where 
+				ANO_EJE			=	@I_ANO_EJE 
+			and SEC_EJEC		=	@I_SEC_EJEC 
+			and NRO_REQUERIM	=	@I_NRO_REQUERIM
+
+END
+
+
+USE [SIGA_1345]
+GO
+/****** Object:  StoredProcedure [dbo].[SP_WMS_CONSULTA_ORDENES_COMPRA_DETALLE_X_ITEM]    Script Date: 11/07/2022 20:22:24 ******/
+SET ANSI_NULLS ON
+GO
+SET QUOTED_IDENTIFIER ON
+GO
+ALTER PROCEDURE [dbo].[SP_WMS_CONSULTA_ORDENES_COMPRA_DETALLE_X_ITEM](
+	@I_ANO_EJE int,
+	@I_SEC_EJEC int,
+	@I_NRO_ORDEN int
+	
+)
+AS
+BEGIN
+
+		SELECT	
+				sig_orden_item.ano_eje, sig_orden_item.sec_ejec, 
+				sig_orden_adquisicion.NRO_ORDEN,
+				sig_orden_item.sec_item , sig_orden_item.grupo_bien , sig_orden_item.clase_bien , sig_orden_item.familia_bien , 
+				sig_orden_item.item_bien ,
+				concat(sig_orden_item.grupo_bien, sig_orden_item.clase_bien, sig_orden_item.familia_bien, sig_orden_item.item_bien) ITEM_CODE,
+				CATALOGO_BIEN_SERV.NOMBRE_ITEM sProducto,
+				sig_orden_item.cant_item 
+				, sig_orden_item.unidad_medida , UNIDAD_MEDIDA.NOMBRE DES_UNIDAD_MEDIDA,
+				sig_orden_item.prec_unit_moneda , 
+				 sig_orden_adquisicion.moneda,  
+				sig_orden_secuencia.tipo_cambio , sig_orden_item.prec_tot_soles 
+		FROM 
+				sig_orden_adquisicion , sig_orden_secuencia , sig_orden_item , catalogo_bien_serv , UNIDAD_MEDIDA    
+		WHERE 
+					sig_orden_adquisicion.ano_eje =sig_orden_secuencia.ano_eje 
+				and sig_orden_adquisicion.sec_ejec =sig_orden_secuencia.sec_ejec 
+				and sig_orden_adquisicion.nro_orden =sig_orden_secuencia.nro_orden 
+				and sig_orden_adquisicion.tipo_bien =sig_orden_secuencia.tipo_bien 
+				and sig_orden_adquisicion.tipo_ppto =sig_orden_secuencia.tipo_ppto 
+				and sig_orden_secuencia.ano_eje =sig_orden_item.ano_eje 
+				and sig_orden_secuencia.sec_ejec =sig_orden_item.sec_ejec 
+				and sig_orden_secuencia.nro_orden =sig_orden_item.nro_orden 
+				and sig_orden_secuencia.tipo_bien =sig_orden_item.tipo_bien 
+				and sig_orden_secuencia.tipo_ppto =sig_orden_item.tipo_ppto 
+				and sig_orden_secuencia.sec_orden =sig_orden_item.sec_orden 
+				and catalogo_bien_serv.sec_ejec =sig_orden_item.sec_ejec 
+				and catalogo_bien_serv.tipo_bien =sig_orden_item.tipo_bien 
+				and catalogo_bien_serv.grupo_bien =sig_orden_item.grupo_bien 
+				and catalogo_bien_serv.clase_bien =sig_orden_item.clase_bien 
+				and catalogo_bien_serv.familia_bien =sig_orden_item.familia_bien 
+				and catalogo_bien_serv.item_bien =sig_orden_item.item_bien 
+				and sig_orden_item.ano_eje =@I_ANO_EJE 
+				AND sig_orden_item.sec_ejec =@I_SEC_EJEC 
+				AND sig_orden_item.nro_orden =@I_NRO_ORDEN
+				AND sig_orden_item.tipo_bien ='B' 
+				AND sig_orden_item.tipo_ppto =1 
+				AND sig_orden_item.sec_orden = 1 
+				--AND sig_orden_item.flag_recep = '1' 
+				AND sig_orden_item.UNIDAD_MEDIDA=UNIDAD_MEDIDA.UNIDAD_MEDIDA
+			order by sig_orden_item.nro_orden 
+
+END
+USE [SIGA_1345]
+GO
+/****** Object:  StoredProcedure [dbo].[SP_WMS_CONSULTA_PECOSA]    Script Date: 11/07/2022 20:22:27 ******/
+SET ANSI_NULLS ON
+GO
+SET QUOTED_IDENTIFIER ON
+GO
+ ALTER PROCEDURE [dbo].[SP_WMS_CONSULTA_PECOSA](
+	@I_ANO_EJE int,
+	@I_SEC_EJEC int,
+	@I_NRO_PEDIDO char(5)
+	
+)
+AS
+BEGIN
+ SELECT SIG_PEDIDOS.ANO_EJE,   
+         SIG_PEDIDOS.NRO_PEDIDO,   
+         SIG_PEDIDOS.TIPO_BIEN,   
+         SIG_PEDIDOS.TIPO_PEDIDO,   
+         SIG_PEDIDOS.FECHA_PEDIDO,   
+         Coalesce(SIG_PEDIDOS.EMPLEADO_PECOSA,  SIG_PEDIDOS.EMPLEADO) EMPLEADO,   
+         SIG_PEDIDOS.SEC_FUNC,   
+         SIG_PEDIDOS.ESTADO,   
+         SIG_PEDIDOS.FECHA_APROB,   
+         SIG_PEDIDOS.CODIGO_TAREA,   
+         SIG_PEDIDOS.TIPO_PPTO,   
+         SIG_PEDIDOS.FECHA_REG,   
+         SIG_PEDIDOS.EQUIPO_REG,   
+         SIG_PEDIDOS.CUSER_DASA,   
+         SIG_PEDIDOS.CUSER_ID,   
+         SIG_PEDIDOS.MES_PEDIDO,   
+         SIG_PEDIDOS.SEC_EJEC,   
+         SIG_PEDIDOS.TIPO_TAREA,   
+         SIG_PEDIDOS.TIPO_USO,   
+         SIG_PEDIDOS.CENTRO_COSTO,   
+         SIG_PEDIDOS.MOTIVO_PEDIDO,   
+         '' as codigo_tarea_nuevo,   
+         SIG_PEDIDOS.NIVEL_TAREA,   
+         SIG_PEDIDOS.CODIGO_DESTINO,   
+         SIG_PEDIDOS.INDICADOR_PEDIDO,   
+         SIG_PEDIDOS.NOMBRE_EMPLEADO,   
+         SIG_PEDIDOS.MONEDA,   
+         '' as nro_pedido_com,   
+         SIG_PEDIDOS.ORIGEN,   
+         SIG_PEDIDOS.FUENTE_FTO,   
+         SIG_PEDIDOS.TIPO_RECURSO,   
+         SIG_PEDIDOS.ORIGEN_FTO,   
+         SIG_PEDIDOS.TIPO_CONSUMO,   
+         SIG_PEDIDOS.INDICADOR_INTERFASE,   
+         SIG_PEDIDOS.ACT_PROY,   
+         '  ' as fuente_fto_flag,   
+         '                            ' as grupo_tarea_nuevo  
+    FROM SIG_PEDIDOS  
+   WHERE ( SIG_PEDIDOS.ANO_EJE = @I_ANO_EJE  ) AND  
+         ( SIG_PEDIDOS.SEC_EJEC = @I_SEC_EJEC  ) AND  
+         ( SIG_PEDIDOS.TIPO_BIEN = 'B'  ) AND  
+         ( SIG_PEDIDOS.TIPO_PEDIDO = '2'  ) AND  
+         ( SIG_PEDIDOS.NRO_PEDIDO = @I_NRO_PEDIDO  )  
+END
+USE [SIGA_1345]
+GO
+/****** Object:  StoredProcedure [dbo].[SP_WMS_CONSULTA_PECOSA_DETALLE]    Script Date: 11/07/2022 20:22:30 ******/
+SET ANSI_NULLS ON
+GO
+SET QUOTED_IDENTIFIER ON
+GO
+ ALTER PROCEDURE [dbo].[SP_WMS_CONSULTA_PECOSA_DETALLE](
+	@I_ANO_EJE int,
+	@I_SEC_EJEC int,
+	@I_NRO_PEDIDO char(5),
+	@I_ALMACEN CHAR(3) ,
+	@I_SEC_ALMACEN CHAR(3)
+	
+)
+AS
+BEGIN
+SELECT sig_detalle_pedidos.ano_eje,
+	sig_detalle_pedidos.nro_pedido,
+	sig_detalle_pedidos.tipo_bien,
+	sig_detalle_pedidos.tipo_pedido,
+	sig_detalle_pedidos.sec_ejec,
+	sig_detalle_pedidos.secuencia,
+	sig_detalle_pedidos.grupo_bien,
+	sig_detalle_pedidos.clase_bien,
+	sig_detalle_pedidos.familia_bien,
+	sig_detalle_pedidos.item_bien,
+	catalogo_bien_serv.nombre_item,
+	sig_detalle_pedidos.unidad_medida,
+	sig_detalle_pedidos.cant_solicitada,
+	sig_detalle_pedidos.cant_aprobada,
+	sig_detalle_pedidos.estado_atend,
+	sig_detalle_pedidos.fecha_pecosa,
+	sig_detalle_pedidos.estado_confor,
+	sig_detalle_pedidos.nro_cuadro,
+	sig_detalle_pedidos.estado_ped,
+	sig_detalle_pedidos.estado_prog,
+	sig_detalle_pedidos.nro_pecosa,
+	sig_detalle_pedidos.estado_compra,
+	sig_detalle_pedidos.fecha_aprob,
+	sig_detalle_pedidos.precio_unit,
+	sig_detalle_pedidos.valor_total,
+	sig_detalle_pedidos.fecha_reg,
+	sig_detalle_pedidos.equipo_reg,
+	sig_detalle_pedidos.cuser_id,
+	sig_detalle_pedidos.cuser_dasa,
+	sig_detalle_pedidos.fecha_confor,
+	sig_detalle_pedidos.cant_atendida,
+	catalogo_bien_serv.flag_item,
+	sig_detalle_pedidos.almacen,
+	sig_detalle_pedidos.sec_almacen,
+	unidad_medida.abreviatura,
+	sig_detalle_pedidos.clasificador,
+	sig_detalle_pedidos.mayor,
+	sig_detalle_pedidos.sub_cta,
+	catalogo_bien_serv.flag_activo
+FROM sig_detalle_pedidos,
+	catalogo_bien_serv,
+	unidad_medida
+WHERE (sig_detalle_pedidos.unidad_medida = unidad_medida.unidad_medida)
+	AND (sig_detalle_pedidos.sec_ejec = catalogo_bien_serv.sec_ejec)
+	AND (sig_detalle_pedidos.tipo_bien = catalogo_bien_serv.tipo_bien)
+	AND (sig_detalle_pedidos.grupo_bien = catalogo_bien_serv.grupo_bien)
+	AND (sig_detalle_pedidos.clase_bien = catalogo_bien_serv.clase_bien)
+	AND (sig_detalle_pedidos.familia_bien = catalogo_bien_serv.familia_bien)
+	AND (sig_detalle_pedidos.item_bien = catalogo_bien_serv.item_bien)
+	AND (
+		(SIG_DETALLE_PEDIDOS.ANO_EJE = @I_ANO_EJE)
+		AND (SIG_DETALLE_PEDIDOS.SEC_EJEC = @I_SEC_EJEC)
+		AND (SIG_DETALLE_PEDIDOS.TIPO_BIEN = 'B')
+		AND (SIG_DETALLE_PEDIDOS.TIPO_PEDIDO = '2')
+		AND (SIG_DETALLE_PEDIDOS.NRO_PEDIDO = @I_NRO_PEDIDO)
+		AND (SIG_DETALLE_PEDIDOS.ESTADO_PED <> '3')
+		AND (SIG_DETALLE_PEDIDOS.ALMACEN = @I_ALMACEN)
+		AND (SIG_DETALLE_PEDIDOS.SEC_ALMACEN = @I_SEC_ALMACEN)
+		AND (SIG_DETALLE_PEDIDOS.FLAG_CAJA = '0')
+		)
+ORDER BY sig_detalle_pedidos.tipo_bien ASC,
+	catalogo_bien_serv.nombre_item ASC
+END
+USE [SIGA_1345]
+GO
+/****** Object:  StoredProcedure [dbo].[SP_WMS_INSERTAR_RECEPCION_ORDEN_E1]    Script Date: 11/07/2022 20:22:33 ******/
+SET ANSI_NULLS ON
+GO
+SET QUOTED_IDENTIFIER ON
+GO
+
+ALTER PROCEDURE [dbo].[SP_WMS_INSERTAR_RECEPCION_ORDEN_E1](
+	@ANO_EJE		NUMERIC,
+	@SEC_EJEC		NUMERIC,
+	@NRO_ORDEN		NUMERIC,
+	@OBSERVACION	CHAR(150),
+	@FECHA_MOVIMTO	DATETIME,
+	@NRO_GUIA		CHAR(20),
+	@MES_MOVIMTO	CHAR(2),
+	@FECHA_REG		DATETIME,
+	@CUSER_ID		CHAR(20),
+	@EQUIPO_REG		CHAR(20),
+	@TIPO_MOVIMTO	CHAR(1),
+	@TIPO_TRANSAC	NUMERIC
+	
+)
+AS
+BEGIN
+/*select	@ANO_EJE		
+select	@SEC_EJEC		
+select	@NRO_ORDEN		
+select	@OBSERVACION	
+select	@FECHA_MOVIMTO
+select	@NRO_GUIA		
+select	@MES_MOVIMTO	
+select	@FECHA_REG		
+select	@CUSER_ID		
+select	@EQUIPO_REG		
+select	@TIPO_MOVIMTO	
+select	@TIPO_TRANSAC*/	
+
+BEGIN TRANSACTION; 
+/*
+delete from sig_detalle_cta_almacen where  ANO_EJE=2022 and NRO_MOVIMTO > (1158)  AND tipo_movimto ='R' AND tipo_transac =1 and ALMACEN	='001' AND SEC_ALMACEN ='121'
+delete from sig_detalle_movim_ppto where  ANO_EJE=2022 and NRO_MOVIMTO > (1158)  AND tipo_movimto ='R' AND tipo_transac =1 and ALMACEN	='001' AND SEC_ALMACEN ='121'
+delete from sig_detalle_movim_almacen where  ANO_EJE=2022 and NRO_MOVIMTO > (1158)  AND tipo_movimto ='R' AND tipo_transac =1 and ALMACEN	='001' AND SEC_ALMACEN ='121'
+delete from sig_detalle_item_almacen where  ANO_EJE=2022 and NRO_MOVIMTO > (1158)  AND tipo_movimto ='R' AND tipo_transac =1 and ALMACEN	='001' AND SEC_ALMACEN ='121'
+delete from sig_secuencia_mov_almacen where  ANO_EJE=2022 and NRO_MOVIMTO > (1158)  AND tipo_movimto ='R' AND tipo_transac =1 and ALMACEN	='001' AND SEC_ALMACEN ='121'
+delete from sig_movim_almacen where  ANO_EJE=2022 and NRO_MOVIMTO > (1158) AND tipo_movimto ='R' AND tipo_transac =1 and ALMACEN	='001' AND SEC_ALMACEN ='121'
+*/
+/*
+BEGIN TRANSACTION; 
+update sig_detalle_item_almacen SET cant_recibido =0 WHERE ano_eje =2022 AND sec_ejec =1345 AND almacen ='001' AND sec_almacen ='121' AND tipo_movimto ='R' AND tipo_transac =1 AND tipo_ppto =1 AND nro_movimto =1159 
+update sig_detalle_movim_almacen SET cant_recibido =0 WHERE ano_eje =2022 AND sec_ejec =1345 AND almacen ='001' AND sec_almacen ='121' AND tipo_movimto ='R' AND tipo_transac =1 AND tipo_ppto =1 AND nro_movimto =1159 
+update sig_orden_item SET flag_recep ='2' , fecha_recep ='5-25-2022' , cant_recibida =203528.0000 WHERE ano_eje =2022 AND sec_ejec =1345 AND nro_orden =998 AND tipo_bien ='B' AND tipo_ppto =1 AND sec_orden =1 AND sec_item =1 
+
+update sig_detalle_movim_almacen SET indi_recibido ='2' WHERE ano_eje =2022 AND sec_ejec =1345 AND almacen ='001' AND sec_almacen ='121' AND tipo_movimto ='R' AND tipo_transac =1 AND tipo_ppto =1 AND nro_movimto =1159 AND secuencia =1 AND sec_item =1 
+update sig_orden_adquisicion SET flag_almacen ='2' WHERE ano_eje =2022 AND sec_ejec =1345 AND nro_orden =998 AND tipo_bien ='B' AND tipo_ppto =1 
+
+update sig_detalle_movim_almacen SET cant_recibido =0.0000 , cant_articulo =0.0000 , valor_total =282362.6000 WHERE ano_eje =2022 AND sec_ejec =1345 AND almacen ='001' AND sec_almacen ='121' AND tipo_movimto ='R' AND tipo_transac =1 AND tipo_ppto =1 AND nro_movimto =1159 AND secuencia =1 AND sec_detalle =1 
+update sig_detalle_movim_ppto SET cant_articulo =0.0000 WHERE ano_eje =2022 AND sec_ejec =1345 AND almacen ='001' AND sec_almacen ='121' AND tipo_movimto ='R' AND tipo_transac =1 AND tipo_ppto =1 AND nro_movimto =1159 AND secuencia =1 AND sec_detalle =1 AND sec_ppto =1 
+update sig_detalle_cta_almacen SET valor_cuenta =282362.6000 WHERE ano_eje =2022 AND sec_ejec =1345 AND almacen ='001' AND sec_almacen ='121' AND tipo_movimto ='R' AND tipo_transac =1 AND tipo_ppto =1 AND nro_movimto =1159 AND secuencia =1 AND sec_detalle =1 AND sec_ppto =1 AND sec_cuenta =1 
+
+DELETE FROM SIG_DETALLE_MOVIM_ALMACEN_EST WHERE ano_eje =2022 AND sec_ejec =1345 AND almacen ='001' AND sec_almacen ='121' AND tipo_movimto ='R' AND tipo_transac =1 AND tipo_ppto =1 AND nro_movimto =1159 
+DELETE FROM sig_detalle_cta_almacen WHERE ano_eje =2022 AND sec_ejec =1345 AND almacen ='001' AND sec_almacen ='121' AND tipo_movimto ='R' AND tipo_transac =1 AND tipo_ppto =1 AND nro_movimto =1159 
+DELETE FROM sig_detalle_movim_ppto WHERE ano_eje =2022 AND sec_ejec =1345 AND almacen ='001' AND sec_almacen ='121' AND tipo_movimto ='R' AND tipo_transac =1 AND tipo_ppto =1 AND nro_movimto =1159 
+DELETE FROM sig_detalle_almacen_lotes WHERE ano_eje =2022 AND sec_ejec =1345 AND almacen ='001' AND sec_almacen ='121' AND tipo_movimto ='R' AND tipo_transac =1 AND tipo_ppto =1 AND nro_movimto =1159 
+DELETE FROM sig_detalle_movim_almacen WHERE ano_eje =2022 AND sec_ejec =1345 AND almacen ='001' AND sec_almacen ='121' AND tipo_movimto ='R' AND tipo_transac =1 AND tipo_ppto =1 AND nro_movimto =1159 
+DELETE FROM sig_detalle_item_almacen WHERE ano_eje =2022 AND sec_ejec =1345 AND almacen ='001' AND sec_almacen ='121' AND tipo_movimto ='R' AND tipo_transac =1 AND tipo_ppto =1 AND nro_movimto =1159 
+DELETE FROM sig_secuencia_mov_almacen WHERE ano_eje =2022 AND sec_ejec =1345 AND almacen ='001' AND sec_almacen ='121' AND tipo_movimto ='R' AND tipo_transac =1 AND tipo_ppto =1 AND nro_movimto =1159 
+DELETE FROM sig_movim_almacen WHERE ano_eje = 2022 AND sec_ejec = 1345 AND almacen = '001' AND sec_almacen = '121' AND tipo_movimto = 'R' AND tipo_transac = 1 AND nro_movimto = 1159 AND proveedor = 177 
+COMMIT TRANSACTION;*/
+----------------------------------------------------------------------------------------------
+-- CODIGO 001 - QUERY DATOS DE LA ORDEN DE COMPRA - COLOR AMARILLO EN EL DICCIONARIO DE DATOS
+-----------------------------------------------------------------------------------------------
+DECLARE @almacen		char(3);  
+DECLARE @SEC_ALMACEN	char(3); 
+DECLARE @ano_orden		numeric(4,0);  
+DECLARE @proveedor		numeric(4,0);
+DECLARE @tipo_uso		char(1); 
+DECLARE @tipo_bien		char(1); 
+DECLARE @tipo_ppto		numeric(1,0); 
+DECLARE @tipo_proceso	char(2); 
+
+SELECT @almacen			= '' 
+SELECT @SEC_ALMACEN		= ''
+SELECT @ano_orden		= 0
+SELECT @proveedor		= 0
+SELECT @tipo_uso		= ''
+SELECT @tipo_bien		= ''
+SELECT @tipo_ppto		= 0
+SELECT @tipo_proceso	= ''
+
+SELECT  
+			@almacen			= sig_orden_adquisicion.almacen,
+			@SEC_ALMACEN		= sig_orden_adquisicion.sec_almacen,
+			@ano_orden			= YEAR( fecha_orden),
+			@proveedor			= sig_orden_adquisicion.proveedor,
+			@tipo_uso			= sig_orden_adquisicion.tipo_uso,
+			@tipo_bien			= sig_orden_adquisicion.tipo_bien,
+			@tipo_ppto			= sig_orden_adquisicion.TIPO_PPTO,
+			@tipo_proceso		= sig_orden_adquisicion.TIPO_PROCESO			
+FROM 
+			sig_orden_adquisicion
+					LEFT OUTER JOIN sig_contratistas 
+						ON		
+						sig_orden_adquisicion.proveedor = sig_contratistas.proveedor     
+WHERE 
+					( sig_orden_adquisicion.ano_eje = @ANO_EJE ) 
+			And     ( sig_orden_adquisicion.estado = '1' ) 
+			and     ( sig_orden_adquisicion.sec_ejec = @SEC_EJEC ) 
+			and     ( sig_orden_adquisicion.tipo_bien = 'B' ) 
+			And     ( sig_orden_adquisicion.tipo_ppto = 1 ) 
+			and     ( sig_orden_adquisicion.mes_calend >= '01' )
+			and     ( sig_orden_adquisicion.mes_calend <= '12' ) 
+			and		( sig_orden_adquisicion.nro_orden = @NRO_ORDEN ) 
+ORDER BY 
+			sig_orden_adquisicion.nro_orden
+/*SELECT @almacen			
+SELECT @SEC_ALMACEN		
+SELECT @ano_orden	
+SELECT @proveedor	
+SELECT @tipo_uso	
+SELECT @tipo_bien		
+SELECT @tipo_ppto		
+SELECT @tipo_proceso*/
+----------------------------------------------------------------------------
+-- CODIGO 002 - QUERY VALIDACION ALMACEN SEDE 
+----------------------------------------------------------------------------
+/*
+VALIDA SI HAY EN EL ALMACEN Y SEC_ALMACEN (SEDE) UN MOVIEMIENTO NULL SEGUN TIPO_MOVIMIENTO Y TIPO_TRASAC, SEGUN TABLA :
+
+R	1	INGRESO POR COMPRA	INGR. O/C.
+R	3	NEA - INGRESO PRODUCCION	NEA-ING.PROD.
+R	4	NEA - DONACION	NEA-DONACION
+R	5	NEA - TRANSF.EXTERNA	NEA-TRANS.EXT.
+R	6	NEA - DEVOL.ALMACEN	NEA-DEV.ALMACEN
+R	8	NEA - DFERENC.INVENTARIO	NEA-DIF.X INVENT.
+R	9	NEA - OTROS	OTROS
+R	17	NEA - PRODUCTO TERMINADO	NEA-PROD.TERM.
+
+*/
+----------------------------------------------------------------------------
+-- CODIGO 003 - QUERY CALCULAR EL MAXIMO NRO DE MOVIMIENTO A TRAVES DEL CAMPO NRO_MOVIMTO
+----------------------------------------------------------------------------
+/*
+
+*/
+DECLARE @nro_mvimto numeric(5,0);       
+SELECT @nro_mvimto = 0;    
+SELECT @nro_mvimto  = max ( nro_movimto ) + 1
+FROM 	sig_movim_almacen
+WHERE ano_eje =@ANO_EJE AND sec_ejec =@SEC_EJEC AND almacen =@almacen AND sec_almacen =@SEC_ALMACEN 
+AND tipo_movimto =@TIPO_MOVIMTO AND tipo_transac =@TIPO_TRANSAC AND tipo_ppto =@tipo_ppto 
+--select @nro_mvimto as 'nro_movimto'
+/*
+DECLARE @nro_mvimto numeric;       
+SELECT @nro_mvimto = 0;    
+SELECT @nro_mvimto  = max ( nro_movimto ) + 1
+FROM 	sig_movim_almacen
+WHERE ano_eje =2022 AND sec_ejec =1345 AND almacen ='001' AND sec_almacen ='121' AND tipo_movimto ='R' AND tipo_transac =1 AND tipo_ppto =1 
+select @nro_mvimto as 'nro_movimto'*/
+
+
+--------------------------------------------------------------------------------------------
+-- CODIGO 004 - QUERY CALCULAR EL MAXIMO NRO DE MOVIMIENTO A TRAVES DEL CAMPO NRO_MOVIMTO
+--------------------------------------------------------------------------------------------
+
+DECLARE @empleado char(10);       
+SELECT @empleado = '';
+
+SELECT 
+		@empleado = A.EMPLEADO 
+FROM (
+SELECT	sig_almacen.almacen			,           
+			sig_almacen.sec_almacen		,           
+			sig_almacen.nombre_alm		,           
+			'' as descripcion			,           
+			sig_sedes.nombre_sede		,           
+			sig_almacen.empleado		,           
+			sig_almacen.flag_sismed     
+FROM		
+			sig_almacen					,           
+			sig_sedes     
+WHERE		
+					( sig_sedes.sede = sig_almacen.sede ) 
+			and		( sig_sedes.pliego = sig_almacen.pliego ) 
+			and     (  ( sig_almacen.sec_ejec = @SEC_EJEC ) 
+			and     ( sig_almacen.sec_almacen = '000' ) 
+			and     ((1 = -1) or          (1 <> -1 
+			And     ( sig_almacen.tipo_ppto =  @tipo_ppto)) ) 
+			and     (('%' = '%') or          ('%' <> '%' And          
+				(  
+					exists 
+						(SELECT cuser_id 
+							FROM sig_usuario_almacen 
+								WHERE		cuser_id = '%' 
+										AND sec_ejec = @SEC_EJEC 
+										AND almacen = sig_almacen.almacen 
+										AND sec_almacen = sig_almacen.sec_almacen))) ) )    
+							UNION    
+								SELECT 
+										sig_almacen_a.almacen		,           
+										sig_almacen_a.sec_almacen	,          
+										sig_almacen_b.nombre_alm	,           
+										sig_almacen_a.nombre_alm	,           
+										sig_sedes.nombre_sede		,           
+										sig_almacen_a.empleado		,           
+										sig_almacen_a.flag_sismed      
+								FROM 
+										sig_almacen sig_almacen_a	,          
+										sig_almacen sig_almacen_b	,           
+										sig_sedes     
+								WHERE 
+												( sig_almacen_a.sec_ejec = sig_almacen_b.sec_ejec ) 
+										and     ( sig_almacen_a.almacen = sig_almacen_b.almacen ) 
+										and     ( sig_sedes.sede = sig_almacen_a.sede ) 
+										and     ( sig_sedes.pliego = sig_almacen_a.pliego ) 
+										and     ( ( sig_almacen_a.sec_ejec = @SEC_EJEC ) 
+										and     ( sig_almacen_a.sec_almacen <> '000' ) 
+										and     ( sig_almacen_b.sec_almacen = '000' ) 
+										and     ((1 = -1) or				(1 <> -1 And          ( sig_almacen_a.tipo_ppto = @tipo_ppto)) )
+										and     (('%' = '%') or          ('%' <> '%' And         
+										(  
+											exists 
+											(SELECT cuser_id 
+												FROM sig_usuario_almacen 
+													WHERE		 cuser_id = '%' 
+															AND sec_ejec = @SEC_EJEC 
+															AND almacen = sig_almacen_a.almacen
+															AND sec_almacen = sig_almacen_a.sec_almacen))) ) ) 
+															) AS A
+						WHERE A.ALMACEN = @almacen 
+						AND A.SEC_ALMACEN = @SEC_ALMACEN
+--SELECT @empleado
+--------------------------------------------------------------------------------------------
+-- CODIGO 005 - QUERY CALCULAR EL MAXIMO SEC_ITEM DE LA TABLA sig_detalle_item_almacen
+--------------------------------------------------------------------------------------------
+
+
+DECLARE @SEC_ITEM numeric(5,0);       
+SELECT @SEC_ITEM = 0;    
+SELECT  @SEC_ITEM  = CASE WHEN max ( sec_item ) IS null  THEN 1 ELSE max ( sec_item ) + 1 END 
+FROM 	sig_detalle_item_almacen
+WHERE ano_eje =@ANO_EJE AND sec_ejec =@SEC_EJEC AND almacen =@almacen AND sec_almacen =@SEC_ALMACEN AND tipo_movimto =@TIPO_MOVIMTO 
+AND tipo_transac =@TIPO_TRANSAC AND tipo_ppto =@tipo_ppto and secuencia= 1 and nro_movimto = @nro_mvimto
+--select @SEC_ITEM as 'SEC_ITEM'
+
+
+/*****************************************************************************************************************************/
+/*
+INSERT INTO sig_movim_almacen ( ANO_EJE, SEC_EJEC, ALMACEN, SEC_ALMACEN, TIPO_MOVIMTO, TIPO_TRANSAC, NRO_MOVIMTO, NRO_ORDEN, ANO_ORDEN, 
+PROC_GUIA, PROVEEDOR, OBSERVACION, FECHA_MOVIMTO, TIPO_USO, TIPO_DOCUMTO, NRO_GUIA, ESTADO_KARDEX, MES_MOVIMTO, FECHA_REG, CUSER_ID, 
+EQUIPO_REG, TIPO_BIEN, TIPO_PPTO, NRO_ENCARGO, TIPO_PROCESO, TIPO_ORIGEN, RESPONSABLE, FLAG_MOVIMTO, FLAG_ESTRATEGICO )
+VALUES ( 2022.000000000000000, 1345.000000000000000, '001', '121', 'R', 1.000000000000000000, 1159.000000000000000, 998, 2022.000000000000000, 
+'01', 177.0000000000000000, 'PRUEBA HIB SIGA DEMO', '5-25-2022 0:0:0.000', 'C', '031', 'SIAF: 1394', 'N', '05', '5-25-2022 12:54:53.996', 
+'USUAR199', 'LAPTOP-7D0LVIN0', 'B', 1.000000000000000000, 0.00, '31', '0', '62', '0', 'N' )*/
+
+INSERT INTO sig_movim_almacen ( ANO_EJE, SEC_EJEC, ALMACEN, SEC_ALMACEN, TIPO_MOVIMTO, TIPO_TRANSAC, NRO_MOVIMTO, NRO_ORDEN, ANO_ORDEN, 
+PROC_GUIA, PROVEEDOR, OBSERVACION, FECHA_MOVIMTO, TIPO_USO, TIPO_DOCUMTO, NRO_GUIA, ESTADO_KARDEX, MES_MOVIMTO, FECHA_REG, CUSER_ID, 
+EQUIPO_REG, TIPO_BIEN, TIPO_PPTO, NRO_ENCARGO, TIPO_PROCESO, TIPO_ORIGEN, RESPONSABLE, FLAG_MOVIMTO, FLAG_ESTRATEGICO )
+VALUES ( @ANO_EJE, @SEC_EJEC, @almacen, @SEC_ALMACEN, @TIPO_MOVIMTO, @TIPO_TRANSAC,@nro_mvimto, @NRO_ORDEN, @ano_orden	, 
+'01',@proveedor, @OBSERVACION, @FECHA_MOVIMTO, @tipo_uso, '031', @NRO_GUIA, 'N', @MES_MOVIMTO, @FECHA_REG, 
+@CUSER_ID, @EQUIPO_REG	, 'B', @tipo_ppto , 0.00, @tipo_proceso	, '0', @empleado, '0', 'N' )
+
+/*------
+select  @ANO_EJE, @SEC_EJEC, @almacen, @SEC_ALMACEN, @TIPO_MOVIMTO, @TIPO_TRANSAC,@nro_mvimto, @NRO_ORDEN, @ano_orden	, 
+'01',@proveedor, @OBSERVACION, @FECHA_MOVIMTO, @tipo_uso, '031', @NRO_GUIA, 'N', @MES_MOVIMTO, @FECHA_REG, 
+@CUSER_ID, @EQUIPO_REG	, 'B', @tipo_ppto , 0.00, @tipo_proceso	, '0', @empleado, '0', 'N'
+---*/
+
+--select * from sig_movim_almacen where  ANO_EJE=2022 and NRO_MOVIMTO in (1159) AND tipo_movimto ='R' AND tipo_transac =1 and ALMACEN	='001' AND SEC_ALMACEN ='121'
+/*****************************************************************************************************************************/
+
+/*
+INSERT INTO sig_secuencia_mov_almacen ( ano_eje , sec_ejec , almacen , sec_almacen , tipo_movimto , tipo_transac , tipo_ppto , nro_movimto , secuencia ) 
+VALUES ( 2022 , 1345 , '001' , '121' , 'R' , 1 , 1 , 1159 , 1 ) */
+
+INSERT INTO sig_secuencia_mov_almacen ( ano_eje , sec_ejec , almacen , sec_almacen , tipo_movimto , tipo_transac , tipo_ppto , nro_movimto , secuencia ) 
+VALUES ( @ANO_EJE , @SEC_EJEC , @almacen ,  @SEC_ALMACEN ,@TIPO_MOVIMTO , @TIPO_TRANSAC , @tipo_ppto ,@nro_mvimto , 1 ) 
+
+
+
+/*****************************************************************************************************************************/
+
+/*INSERT INTO sig_detalle_item_almacen ( ano_eje , sec_ejec , almacen , sec_almacen , tipo_movimto , tipo_transac , tipo_ppto , nro_movimto , secuencia , 
+sec_item , tipo_bien , grupo_bien , clase_bien , familia_bien , item_bien , marca , activo_fijo , cant_adquirido , medida_adquis , cant_recibido , 
+cant_articulo , unidad_medida , precio_unit , valor_total , presentacion , tipo_marca , sec_modelo , fecha_reg , cuser_id , equipo_reg ) 
+VALUES ( 2022 , 1345 , '001' , '121' , 'R' , 1 , 1 , 1159 , 1 , 1 , 'B' , '58' , '03' , '0019' , '0002' , 328 , 'N' , 458598.0000 , 112 , 
+255070.0000 , 255070.0000 , 112 , 1.107001 , 282362.60 , null , '1' , null , '5-25-2022 12:57:5.480' , 'USUAR199' , 'LAPTOP-7D0LVIN0' ) 
+*/
+--ESTE CODIGO ES PARA EXTRAER EL PRECIO REAL DEL PRODUCTO
+DECLARE @PRECIO_UNIT	numeric(10,3);
+SELECT @PRECIO_UNIT		= 0
+
+--SELECT @PRECIO_UNIT = PREC_TOT_SOLES/CANT_ITEM FROM SIG_ORDEN_ITEM WHERE ANO_EJE = 2022 AND SEC_EJEC = 1345 AND NRO_ORDEN IN( 998) AND TIPO_BIEN = 'B'
+SELECT @PRECIO_UNIT = PREC_TOT_SOLES/CANT_ITEM FROM SIG_ORDEN_ITEM WHERE ano_eje =@ANO_EJE AND sec_ejec =@SEC_EJEC AND nro_orden =@NRO_ORDEN AND tipo_bien ='B' AND tipo_ppto =1
+
+SELECT @PRECIO_UNIT
+
+INSERT INTO sig_detalle_item_almacen
+  ( ano_eje , sec_ejec , almacen , sec_almacen , tipo_movimto , tipo_transac , tipo_ppto , nro_movimto , secuencia ,
+sec_item , tipo_bien , grupo_bien , clase_bien , familia_bien , item_bien , marca , activo_fijo , cant_adquirido , medida_adquis , cant_recibido , 
+cant_articulo , unidad_medida , precio_unit , valor_total , presentacion , tipo_marca , sec_modelo , fecha_reg , cuser_id , equipo_reg 
+  )
+     SELECT
+			@ANO_EJE AS 'ANO_EJE', @SEC_EJEC AS 'SEC_EJEC', @almacen AS 'ALMACEN',  @SEC_ALMACEN AS 'SEC_ALMACEN', 
+			@TIPO_MOVIMTO AS 'TIPO_MOVIMTO', @TIPO_TRANSAC AS 'TIPO_TRANSAC', @tipo_ppto AS 'tipo_ppto' , @nro_mvimto AS 'nro_mvimto',
+			1 'secuencia',
+			sig_orden_item.sec_item , 'B',sig_orden_item.grupo_bien , sig_orden_item.clase_bien , sig_orden_item.familia_bien , 
+			sig_orden_item.item_bien , 
+			sig_orden_item.marca,catalogo_bien_serv.flag_activo ,sig_orden_item.cant_item + sig_orden_item.cant_modif ,
+			sig_orden_item.unidad_medida,
+			(sig_orden_item.cant_item + sig_orden_item.cant_modif -sig_orden_item.cant_recibida),
+			(sig_orden_item.cant_item + sig_orden_item.cant_modif -sig_orden_item.cant_recibida),
+			sig_orden_item.unidad_medida,
+			 sig_orden_item.prec_unit_moneda,
+			 --campo corregido
+			(sig_orden_item.cant_item + sig_orden_item.cant_modif -sig_orden_item.cant_recibida)*@PRECIO_UNIT,
+			--((sig_orden_item.cant_item-(sig_orden_item.cant_item + sig_orden_item.cant_modif -sig_orden_item.cant_recibida))*sig_orden_item.prec_unit_moneda),
+			 --(sig_orden_item.prec_unit_moneda*sig_orden_item.cant_recibida),precio_unit			 
+			null,'1',null,@FECHA_REG,@CUSER_ID,@EQUIPO_REG
+			 --'5-25-2022 12:57:5.480' , 'USUAR199' , 'LAPTOP-7D0LVIN0' 
+		FROM 
+			sig_orden_adquisicion , sig_orden_secuencia , sig_orden_item , catalogo_bien_serv 
+		WHERE 
+				sig_orden_adquisicion.ano_eje =sig_orden_secuencia.ano_eje 
+			and sig_orden_adquisicion.sec_ejec =sig_orden_secuencia.sec_ejec 
+			and sig_orden_adquisicion.nro_orden =sig_orden_secuencia.nro_orden 
+			and sig_orden_adquisicion.tipo_bien =sig_orden_secuencia.tipo_bien 
+			and sig_orden_adquisicion.tipo_ppto =sig_orden_secuencia.tipo_ppto 
+			and sig_orden_secuencia.ano_eje =sig_orden_item.ano_eje 
+			and sig_orden_secuencia.sec_ejec =sig_orden_item.sec_ejec 
+			and sig_orden_secuencia.nro_orden =sig_orden_item.nro_orden 
+			and sig_orden_secuencia.tipo_bien =sig_orden_item.tipo_bien 
+			and sig_orden_secuencia.tipo_ppto =sig_orden_item.tipo_ppto 
+			and sig_orden_secuencia.sec_orden =sig_orden_item.sec_orden 
+			and catalogo_bien_serv.sec_ejec =sig_orden_item.sec_ejec 
+			and catalogo_bien_serv.tipo_bien =sig_orden_item.tipo_bien 
+			and catalogo_bien_serv.grupo_bien =sig_orden_item.grupo_bien 
+			and catalogo_bien_serv.clase_bien =sig_orden_item.clase_bien 
+			and catalogo_bien_serv.familia_bien =sig_orden_item.familia_bien 
+			and catalogo_bien_serv.item_bien =sig_orden_item.item_bien 
+			and sig_orden_item.ano_eje =@ANO_EJE
+			AND sig_orden_item.sec_ejec =@SEC_EJEC 
+			AND sig_orden_item.nro_orden =@NRO_ORDEN
+			AND sig_orden_item.tipo_bien ='B' 
+			AND sig_orden_item.tipo_ppto =@tipo_ppto
+			AND sig_orden_item.sec_orden =1 
+	--AND sig_orden_item.flag_recep <> '3' 
+	order by sig_orden_item.sec_item 
+
+	
+/**********************************************************************************************************************************/
+/*
+INSERT INTO sig_detalle_movim_almacen ( ano_eje , sec_ejec , almacen , sec_almacen , tipo_movimto , tipo_transac , tipo_ppto , nro_movimto , secuencia , sec_detalle , sec_item , tipo_bien , grupo_bien , clase_bien , familia_bien , item_bien , marca , operacion , clasificador , activo_fijo , tipo_activo , fecha_entrada , cant_adquirido , medida_adquis , cant_recibido , cant_articulo , unidad_medida , precio_unit , precio_moneda , moneda , fecha_movimto , precio_promed , mes_proceso , valor_total , fecha_reg , cuser_id , equipo_reg , mayor , sub_cta , cant_atendida , tipo_marca , flag_exo_impto , flag_credito_fiscal , tipo_uso , sec_modelo ) 
+VALUES ( 2022 , 1345 , '001' , '121' , 'R' , 1 , 1 , 1159 , 1 , 1 , 1 , 'B' , '58' , '03' , '0019' , '0002' , 328 , 0 , '2.3. 1  8. 1  2' , 'N' ,
+'' , null , 458598.0000 , 112 , 255070.0000 , 255070.0000 , 112 , 1.107001 , 1.107001 , 'S/.' , '5-25-2022' , 0 , '05' , 282362.6000 , '5-25-2022 12:57:5.480' , 'USUAR199' , 'LAPTOP-7D0LVIN0' , '1301' , '080102' , 0 , '1' , '0' , 'N' , 'C' , null ) 
+
+*/
+
+
+INSERT INTO sig_detalle_movim_almacen ( ano_eje , sec_ejec , almacen , sec_almacen , tipo_movimto , tipo_transac , tipo_ppto , nro_movimto , secuencia , 
+	sec_detalle , sec_item , tipo_bien , grupo_bien , clase_bien , familia_bien , item_bien , marca , operacion , clasificador , activo_fijo , tipo_activo 
+	, fecha_entrada , cant_adquirido , medida_adquis , cant_recibido , cant_articulo , unidad_medida , precio_unit , 
+	  precio_moneda , moneda , fecha_movimto , precio_promed , mes_proceso , 
+	  valor_total , fecha_reg , cuser_id , equipo_reg , mayor , sub_cta , cant_atendida , tipo_marca , flag_exo_impto, flag_credito_fiscal , tipo_uso , sec_modelo ) 
+		SELECT 
+			@ANO_EJE AS 'ANO_EJE', @SEC_EJEC AS 'SEC_EJEC', @almacen AS 'ALMACEN',  @SEC_ALMACEN AS 'SEC_ALMACEN', 
+			@TIPO_MOVIMTO AS 'TIPO_MOVIMTO', @TIPO_TRANSAC AS 'TIPO_TRANSAC', @tipo_ppto AS 'tipo_ppto' , @nro_mvimto AS 'nro_mvimto',
+			1 'secuencia',
+			ROW_NUMBER () OVER (ORDER BY a.ANO_EJE) AS sec_detalle, c.sec_item,b.TIPO_BIEN, c.GRUPO_BIEN,c.CLASE_BIEN,c.FAMILIA_BIEN,c.ITEM_BIEN,c.MARCA
+			,0 operacion,d.CLASIFICADOR,'N' activo_fijo,'' tipo_activo,null fecha_entrada,			
+			c.cant_item + c.cant_modif ,c.unidad_medida,(c.cant_item + c.cant_modif -c.cant_recibida),(c.cant_item + c.cant_modif -c.cant_recibida),c.unidad_medida,
+			c.prec_unit_moneda,c.prec_unit_moneda,a.moneda,
+			@FECHA_REG,0,@MES_MOVIMTO,
+			(c.cant_item + c.cant_modif -c.cant_recibida)*c.prec_unit_moneda,
+			@FECHA_REG,@CUSER_ID,@EQUIPO_REG,
+			e.mayor , e.sub_cta	,0 ,c.tipo_marca,0,'N',d.tipo_uso,null
+			FROM 
+				sig_orden_adquisicion a
+					left join SIG_ORDEN_SECUENCIA b
+							on 
+								a.ano_eje		=	b.ano_eje 
+							AND a.sec_ejec		=	b.sec_ejec 
+							AND a.nro_orden		=	b.nro_orden 
+							AND a.tipo_bien		=	b.tipo_bien 
+					left join SIG_ORDEN_ITEM c
+						on 
+							b.ano_eje		=	c.ano_eje 
+						AND b.sec_ejec		=	c.sec_ejec 
+						AND b.nro_orden		=	c.nro_orden 
+						AND b.tipo_bien		=	c.tipo_bien 
+						AND b.tipo_ppto		=	c.tipo_ppto
+						AND b.sec_orden		=	c.sec_orden
+					left join sig_orden_item_ppto d
+						on 
+								c.ano_eje		=	d.ano_eje 
+							AND c.sec_ejec		=	d.sec_ejec 
+							AND c.nro_orden		=	d.nro_orden 
+							AND c.tipo_bien		=	d.tipo_bien 
+							AND c.tipo_ppto		=	d.tipo_ppto
+							AND c.sec_orden		=	d.sec_orden
+							AND c.sec_item		=	d.sec_item
+					left join sig_familia_cuenta_ejecutora e
+						on 
+								c.ano_eje		=	e.ano_eje 
+							AND c.tipo_bien		=	e.tipo_bien 
+							AND c.GRUPO_BIEN	=	e.grupo_bien
+							AND c.CLASE_BIEN	=	e.CLASE_BIEN
+							AND c.FAMILIA_BIEN	=	e.FAMILIA_BIEN
+							AND a.TIPO_USO		=	e.TIPO_USO
+							AND d.CLASIFICADOR	=	e.CLASIFICADOR
+				WHERE 
+							a.ano_eje		=	@ANO_EJE  
+					AND		a.sec_ejec		=	@SEC_EJEC 
+					AND		a.nro_orden		=	@NRO_ORDEN 
+					AND		a.tipo_bien		=	'B' 
+					AND		a.tipo_ppto		=	@tipo_ppto
+
+/**********************************************************************************************************************************/
+/*
+INSERT INTO sig_detalle_movim_ppto ( ano_eje , sec_ejec , almacen , sec_almacen , tipo_movimto , tipo_transac , tipo_ppto , nro_movimto , 
+secuencia , sec_detalle , sec_ppto , operacion , clasificador , tipo_destino , modal_destino , sec_func , act_proy , origen , fuente_financ , 
+tipo_recurso , cant_articulo , fecha_reg ) 
+VALUES ( 2022 , 1345 , '001' , '121' , 'R' , 1 , 1 , 1159 , 1 , 1 , 1 , 0 , '2.3. 1  8. 1  2' , '' , '' , 475 , '3' , '1' , '00' , '' , 
+255070.0000 , '5-25-2022 12:57:5.480') */
+
+
+INSERT INTO sig_detalle_movim_ppto ( ano_eje , sec_ejec , almacen , sec_almacen , tipo_movimto , tipo_transac , tipo_ppto , nro_movimto , 
+secuencia , sec_detalle , sec_ppto , operacion , clasificador , tipo_destino , modal_destino , sec_func , act_proy , origen , fuente_financ , 
+tipo_recurso , cant_articulo , fecha_reg ) 
+
+SELECT 
+			@ANO_EJE AS 'ANO_EJE', @SEC_EJEC AS 'SEC_EJEC', @almacen AS 'ALMACEN',  @SEC_ALMACEN AS 'SEC_ALMACEN', 
+			@TIPO_MOVIMTO AS 'TIPO_MOVIMTO', @TIPO_TRANSAC AS 'TIPO_TRANSAC', @tipo_ppto AS 'tipo_ppto' , @nro_mvimto AS 'nro_mvimto',
+			1 'secuencia',
+			d.sec_item,d.SEC_ITEM_PPTO, 0,d.CLASIFICADOR,'','',d.SEC_FUNC,'3',d.ORIGEN,d.FUENTE_FINANC,d.TIPO_RECURSO,(c.cant_item + c.cant_modif -c.cant_recibida),@FECHA_REG
+			FROM 
+				sig_orden_adquisicion a
+					left join SIG_ORDEN_SECUENCIA b
+							on 
+								a.ano_eje		=	b.ano_eje 
+							AND a.sec_ejec		=	b.sec_ejec 
+							AND a.nro_orden		=	b.nro_orden 
+							AND a.tipo_bien		=	b.tipo_bien 
+					left join SIG_ORDEN_ITEM c
+						on 
+							b.ano_eje		=	c.ano_eje 
+						AND b.sec_ejec		=	c.sec_ejec 
+						AND b.nro_orden		=	c.nro_orden 
+						AND b.tipo_bien		=	c.tipo_bien 
+						AND b.tipo_ppto		=	c.tipo_ppto
+						AND b.sec_orden		=	c.sec_orden	
+					left join sig_orden_item_ppto d
+							on 
+								a.ano_eje		=	d.ano_eje 
+							AND a.sec_ejec		=	d.sec_ejec 
+							AND a.nro_orden		=	d.nro_orden 
+							AND a.tipo_bien		=	d.tipo_bien 
+				WHERE 
+							a.ano_eje		=	@ANO_EJE
+					AND		a.sec_ejec		=	@SEC_EJEC
+					AND		a.nro_orden		=	@NRO_ORDEN
+					AND		a.tipo_bien		=	'B' 
+					AND		a.tipo_ppto		=	@tipo_ppto
+
+/**********************************************************************************************************************************/
+/*
+INSERT INTO sig_detalle_cta_almacen ( sec_ejec , ano_eje , almacen , sec_almacen , tipo_movimto , tipo_transac , tipo_ppto , nro_movimto , secuencia , sec_detalle , sec_ppto , sec_cuenta , mayor , sub_cta , tipo_d_h , ind_alma , valor_cuenta ) 
+VALUES ( 1345 , 2022 , '001' , '121' , 'R' , 1 , 1 , 1159 , 1 , 1 , 1 , 1 , '1301' , '080102' , 'D' , '1' , 282362.60 ) */
+
+INSERT INTO sig_detalle_cta_almacen ( sec_ejec , ano_eje , almacen , sec_almacen , tipo_movimto , tipo_transac , 
+tipo_ppto , nro_movimto , secuencia , sec_detalle , sec_ppto , sec_cuenta , mayor , sub_cta , tipo_d_h , ind_alma , valor_cuenta )
+
+SELECT 
+			@SEC_EJEC AS 'SEC_EJEC',@ANO_EJE AS 'ANO_EJE', @almacen AS 'ALMACEN',  @SEC_ALMACEN AS 'SEC_ALMACEN', 
+			@TIPO_MOVIMTO AS 'TIPO_MOVIMTO', @TIPO_TRANSAC AS 'TIPO_TRANSAC', @tipo_ppto AS 'tipo_ppto' , @nro_mvimto AS 'nro_mvimto',
+			1 'secuencia',
+			d.sec_item,d.SEC_ITEM_PPTO, 1,e.mayor , e.sub_cta,'D' , '1',
+			(c.cant_item + c.cant_modif -c.cant_recibida)*@PRECIO_UNIT
+			--(c.cant_item + c.cant_modif -c.cant_recibida)
+			FROM 
+				sig_orden_adquisicion a
+					left join SIG_ORDEN_SECUENCIA b
+							on 
+								a.ano_eje		=	b.ano_eje 
+							AND a.sec_ejec		=	b.sec_ejec 
+							AND a.nro_orden		=	b.nro_orden 
+							AND a.tipo_bien		=	b.tipo_bien 
+					left join SIG_ORDEN_ITEM c
+						on 
+							b.ano_eje		=	c.ano_eje 
+						AND b.sec_ejec		=	c.sec_ejec 
+						AND b.nro_orden		=	c.nro_orden 
+						AND b.tipo_bien		=	c.tipo_bien 
+						AND b.tipo_ppto		=	c.tipo_ppto
+						AND b.sec_orden		=	c.sec_orden	
+					left join sig_orden_item_ppto d
+							on 
+								a.ano_eje		=	d.ano_eje 
+							AND a.sec_ejec		=	d.sec_ejec 
+							AND a.nro_orden		=	d.nro_orden 
+							AND a.tipo_bien		=	d.tipo_bien
+					left join sig_familia_cuenta_ejecutora e
+						on 
+								c.ano_eje		=	e.ano_eje 
+							AND c.tipo_bien		=	e.tipo_bien 
+							AND c.GRUPO_BIEN	=	e.grupo_bien
+							AND c.CLASE_BIEN	=	e.CLASE_BIEN
+							AND c.FAMILIA_BIEN	=	e.FAMILIA_BIEN
+							AND a.TIPO_USO		=	e.TIPO_USO
+							AND d.CLASIFICADOR	=	e.CLASIFICADOR
+				WHERE 
+							a.ano_eje		=	@ANO_EJE
+					AND		a.sec_ejec		=	@SEC_EJEC
+					AND		a.nro_orden		=	@NRO_ORDEN
+					AND		a.tipo_bien		=	'B' 
+					AND		a.tipo_ppto		=	@tipo_ppto
+
+-- ACTUALIZACION DE CAMPOS 
+/**/
+
+update sig_detalle_item_almacen set especificaciones = ' ' 
+WHERE ano_eje =@ANO_EJE and sec_ejec =@SEC_EJEC and almacen =@almacen and sec_almacen =@SEC_ALMACEN and tipo_movimto =@TIPO_MOVIMTO 
+and tipo_transac =@TIPO_TRANSAC and tipo_ppto =@tipo_ppto and nro_movimto =@nro_mvimto and secuencia =1 and sec_item =1 
+
+update sig_orden_item SET flag_recep ='3' , cant_recibida =cant_item + sig_orden_item.cant_modif , fecha_recep =@FECHA_MOVIMTO
+WHERE ano_eje = @ANO_EJE AND sec_ejec =@SEC_EJEC AND nro_orden =@NRO_ORDEN AND tipo_bien ='B' AND tipo_ppto =@tipo_ppto
+AND sec_orden =1 AND ( flag_recep <> '3' or flag_recep is null ) 
+
+update sig_orden_adquisicion SET flag_almacen ='3' 
+WHERE ano_eje =@ANO_EJE AND sec_ejec =@SEC_EJEC AND nro_orden =@NRO_ORDEN AND tipo_bien ='B' AND tipo_ppto =@tipo_ppto
+
+update sig_detalle_movim_almacen SET fecha_movimto =@FECHA_MOVIMTO
+WHERE ano_eje =@ANO_EJE AND sec_ejec =@SEC_EJEC AND almacen =@almacen AND sec_almacen =@SEC_ALMACEN AND tipo_movimto =@TIPO_MOVIMTO 
+AND tipo_transac = @TIPO_TRANSAC AND tipo_ppto =@tipo_ppto AND nro_movimto =@nro_mvimto AND secuencia =1 
+
+update sig_orden_item SET fecha_recep =( SELECT MAX ( sig_movim_almacen.fecha_movimto ) 
+FROM sig_detalle_movim_almacen , sig_movim_almacen 
+WHERE sig_detalle_movim_almacen.ano_eje =sig_movim_almacen.ano_eje 
+and sig_detalle_movim_almacen.sec_ejec =sig_movim_almacen.sec_ejec 
+and sig_detalle_movim_almacen.almacen =sig_movim_almacen.almacen 
+and sig_detalle_movim_almacen.sec_almacen =sig_movim_almacen.sec_almacen 
+and sig_detalle_movim_almacen.tipo_movimto =sig_movim_almacen.tipo_movimto 
+and sig_detalle_movim_almacen.tipo_transac =sig_movim_almacen.tipo_transac 
+and sig_detalle_movim_almacen.tipo_ppto =sig_movim_almacen.tipo_ppto 
+and sig_detalle_movim_almacen.nro_movimto =sig_movim_almacen.nro_movimto 
+and sig_movim_almacen.ano_orden =sig_orden_item.ano_eje 
+and sig_movim_almacen.nro_orden =sig_orden_item.nro_orden 
+and sig_detalle_movim_almacen.sec_ejec =sig_orden_item.sec_ejec 
+and sig_movim_almacen.tipo_bien =sig_orden_item.tipo_bien 
+and sig_detalle_movim_almacen.sec_item =sig_orden_item.sec_item ) 
+WHERE ano_eje =@ANO_EJE AND sec_ejec =@SEC_EJEC AND nro_orden =@NRO_ORDEN AND tipo_bien ='B' AND tipo_ppto =@tipo_ppto AND sec_orden =1 
+
+
+/****************************************************************************************************************/
+-- QUERY DE CREACION Y ACTUALIZACION
+DECLARE @sec_item_aux AS numeric(10)
+
+DECLARE ProdInfo CURSOR FOR select SEC_ITEM from sig_detalle_movim_almacen 
+where ANO_EJE=@ANO_EJE and NRO_MOVIMTO in (@nro_mvimto) AND tipo_movimto =@TIPO_MOVIMTO AND tipo_transac =@TIPO_TRANSAC and ALMACEN = @almacen AND SEC_ALMACEN =@SEC_ALMACEN
+
+OPEN ProdInfo
+FETCH NEXT FROM ProdInfo INTO @sec_item_aux
+
+WHILE @@fetch_status = 0
+
+BEGIN
+    --PRINT @sec_item	
+	-- DATOS DE LA TABLA A
+	declare @MaximoMarca int = (select max ( marca ) + 1 from marca where tipo_marca ='1' AND marca <> 328 and ( marca not between 20000 and 30000 ))
+	
+	--insert into @tablaA (id) values (@MaximoTablaA)
+	insert into marca ( tipo_marca, marca, nombre, estado, fecha_alta ) values ('1',@MaximoMarca,'PRUEBA HIB', 'A', '6-1-2022 17:31:2.389' )	   	
+	
+	-- UPDATE DEL CAMPO MARCA 2 TABLAS 
+	----------------------------------
+	update sig_detalle_movim_almacen set MARCA = @MaximoMarca 
+	where ANO_EJE=@ANO_EJE and NRO_MOVIMTO in (@nro_mvimto) AND tipo_movimto =@TIPO_MOVIMTO AND tipo_transac =@TIPO_TRANSAC and ALMACEN = @almacen AND SEC_ALMACEN =@SEC_ALMACEN
+	and SEC_ITEM = @sec_item_aux
+	---------------------------------
+	update sig_detalle_item_almacen set MARCA = @MaximoMarca 
+	where ANO_EJE=@ANO_EJE and NRO_MOVIMTO in (@nro_mvimto) AND tipo_movimto =@TIPO_MOVIMTO AND tipo_transac =@TIPO_TRANSAC and ALMACEN = @almacen AND SEC_ALMACEN =@SEC_ALMACEN
+	and SEC_ITEM = @sec_item_aux
+	-------------------------------
+
+	FETCH NEXT FROM ProdInfo INTO @sec_item_aux
+END
+CLOSE ProdInfo
+DEALLOCATE ProdInfo
+
+
+-- Retornar pk de la operacion de insertar movimiento de recepcion 
+select @nro_mvimto
+
+
+COMMIT TRANSACTION;
+end 
+USE [SIGA_1345]
+GO
+/****** Object:  StoredProcedure [dbo].[SP_WMS_INSERTAR_RECEPCION_ORDEN_E2]    Script Date: 11/07/2022 20:22:36 ******/
+SET ANSI_NULLS ON
+GO
+SET QUOTED_IDENTIFIER ON
+GO
+
+ALTER PROCEDURE [dbo].[SP_WMS_INSERTAR_RECEPCION_ORDEN_E2](
+	@ANO_EJE		NUMERIC,
+	@SEC_EJEC		NUMERIC,
+	@NRO_MOVIMTO	NUMERIC,
+	@FECHA_MOVIMTO	DATETIME,
+	@nro_lote		NUMERIC,	
+	@ITEM			CHAR(12),
+	@CANT_ITEM		NUMERIC
+	
+)
+AS
+begin 
+BEGIN TRANSACTION; 
+
+-------------------------------------------
+-- CARGARNDO VARIABLES PARA LOS INSERT
+--------------------------------------------
+DECLARE @TIPO_MOVIMTO	char(1);
+DECLARE @TIPO_TRANSAC	NUMERIC;
+DECLARE @almacen		char(3);  
+DECLARE @SEC_ALMACEN	char(3); 
+DECLARE @NRO_ORDEN		NUMERIC;
+
+SELECT @TIPO_MOVIMTO	= ''
+SELECT @TIPO_TRANSAC	= 0
+SELECT @almacen			= '' 
+SELECT @SEC_ALMACEN		= ''
+SELECT @NRO_ORDEN		= 0
+
+SELECT  
+			@TIPO_MOVIMTO		=	TIPO_MOVIMTO,
+			@TIPO_TRANSAC		=	TIPO_TRANSAC,
+			@almacen			=	almacen,
+			@SEC_ALMACEN		=	sec_almacen,
+			@NRO_ORDEN			=	nro_orden
+FROM 
+			sig_movim_almacen 
+WHERE 
+					ANO_EJE			=	@ANO_EJE  
+			AND		NRO_MOVIMTO		=	@NRO_MOVIMTO
+
+------------------------------------
+Update a
+Set a.flag_recep ='3' ,  a.cant_recibida = b.PREC_UNIT_MONEDA
+From
+	sig_orden_item As a
+		Inner Join
+			sig_orden_item As b
+			On 
+					(a.ano_eje = b.ano_eje
+				and a.sec_ejec = b.sec_ejec
+				and a.nro_orden = b.nro_orden
+				and a.tipo_bien = b.tipo_bien
+				and a.tipo_ppto = b.tipo_ppto
+				and a.sec_orden = b.SEC_ORDEN
+				and a.SEC_ITEM	= b.SEC_ITEM)
+WHERE		a.ano_eje =@ANO_EJE 
+		AND a.sec_ejec =@SEC_EJEC 
+		AND a.nro_orden =@NRO_ORDEN 
+		AND a.tipo_bien ='B' 
+		AND a.tipo_ppto =1 
+		AND a.sec_orden =1 
+
+/************************************************************************************************************************************/
+/************************************************************************************************************************************/
+/*update sig_detalle_movim_almacen SET indi_recibido ='3' 
+WHERE ano_eje =2022 AND sec_ejec =1345 AND almacen ='001' AND sec_almacen ='121' AND tipo_movimto ='R' AND tipo_transac =1 
+AND tipo_ppto =1 AND nro_movimto =1159 AND secuencia =1 AND sec_item =1 */
+
+update sig_detalle_movim_almacen SET indi_recibido ='3' 
+WHERE ano_eje =@ANO_EJE and sec_ejec =@SEC_EJEC and almacen =@almacen and sec_almacen =@SEC_ALMACEN and tipo_movimto =@TIPO_MOVIMTO 
+and tipo_transac =@TIPO_TRANSAC and tipo_ppto =1 and nro_movimto =@NRO_MOVIMTO AND secuencia =1
+
+/************************************************************************************************************************************/
+/************************************************************************************************************************************/
+/*update sig_orden_adquisicion SET flag_almacen ='3' 
+WHERE ano_eje =2022 AND sec_ejec =1345 AND nro_orden =998 AND tipo_bien ='B' AND tipo_ppto =1 */
+
+update sig_orden_adquisicion SET flag_almacen ='3' 
+WHERE ano_eje =@ANO_EJE AND sec_ejec =@SEC_EJEC AND nro_orden =@NRO_ORDEN AND tipo_bien ='B' AND tipo_ppto =1
+
+------------------- ESTE CODIGO NO ES NECESARIO DADO QUE SE ACTUALIZO LOS DAOS ANTERIORMENTE 
+/************************************************************************************************************************************/
+/************************************************************************************************************************************/
+/*update sig_detalle_movim_almacen SET cant_recibido =255070.0000 , cant_articulo =255070.0000 , valor_total =282362.6000 
+WHERE ano_eje =2022 AND sec_ejec =1345 AND almacen ='001' AND sec_almacen ='121' AND tipo_movimto ='R' AND tipo_transac =1 
+AND tipo_ppto =1 AND nro_movimto =1159 AND secuencia =1 AND sec_detalle =1 
+
+--SET cant_recibido =255070.0000 , cant_articulo =255070.0000 , valor_total =282362.6000 
+
+select * from sig_movim_almacen where ANO_EJE=2022 and NRO_ORDEN IN (998) AND tipo_movimto ='R' AND tipo_transac =1 and ALMACEN	='001' AND SEC_ALMACEN ='121'
+
+463
+516
+--SET cant_recibido =255070.0000 , cant_articulo =255070.0000 , valor_total =282362.6000 
+
+SELECT * FROM sig_detalle_movim_almacen 
+WHERE ano_eje =2022 AND sec_ejec =1345 AND almacen ='001' AND sec_almacen ='121' AND tipo_movimto ='R' AND tipo_transac =1 
+AND tipo_ppto =1 AND nro_movimto IN (463,516,1159) AND secuencia =1 AND sec_detalle =1
+
+update sig_detalle_movim_almacen SET cant_recibido =255070.0000 , cant_articulo =255070.0000 , valor_total =282362.6000 
+WHERE ano_eje =2022 AND sec_ejec =1345 AND almacen ='001' AND sec_almacen ='121' AND tipo_movimto ='R' AND tipo_transac =1 
+AND tipo_ppto =1 AND nro_movimto =1159 AND secuencia =1 AND sec_detalle =1
+*/
+
+/************************************************************************************************************************************/
+/************************************************************************************************************************************/
+
+/*
+update sig_detalle_movim_ppto SET cant_articulo =255070.0000 WHERE ano_eje =2022 AND sec_ejec =1345 AND almacen ='001' AND sec_almacen ='121' 
+AND tipo_movimto ='R' AND tipo_transac =1 AND tipo_ppto =1 AND nro_movimto =1159 AND secuencia =1 AND sec_detalle =1 AND sec_ppto =1 
+*/
+-- ESTE QUERY 
+
+/************************************************************************************************************************************/
+/************************************************************************************************************************************/
+/*
+--SET valor_cuenta =282362.6000
+select * from sig_detalle_movim_almacen WHERE ano_eje =2022 AND sec_ejec =1345 AND almacen ='004' AND sec_almacen ='001' 
+AND tipo_movimto ='R' AND tipo_transac =1 AND tipo_ppto =1 AND nro_movimto =11 AND secuencia =1 
+--AND sec_detalle =1 AND sec_ppto =1 
+
+select * from sig_detalle_cta_almacen  WHERE ano_eje =2022 AND sec_ejec =1345 AND almacen ='004' AND sec_almacen ='001' 
+AND tipo_movimto ='R' AND tipo_transac =1 AND tipo_ppto =1 AND nro_movimto =11 AND secuencia =1 
+AND sec_detalle =1 AND sec_ppto =1 AND sec_cuenta =1 
+
+select * from sig_detalle_cta_almacen  WHERE ano_eje =2022 AND sec_ejec =1345 AND almacen ='001' AND sec_almacen ='121' 
+AND tipo_movimto ='R' AND tipo_transac =1 AND tipo_ppto =1 AND nro_movimto =1159 AND secuencia =1 AND sec_detalle =1 AND sec_ppto =1 AND sec_cuenta =1 
+*/
+/****/
+--ESTE CODIGO ES PARA EXTRAER EL PRECIO REAL DEL PRODUCTO
+DECLARE @PRECIO_UNIT	numeric(10,9);
+SELECT @PRECIO_UNIT		= 0
+
+--SELECT @PRECIO_UNIT = PREC_TOT_SOLES/CANT_ITEM FROM SIG_ORDEN_ITEM WHERE ANO_EJE = 2022 AND SEC_EJEC = 1345 AND NRO_ORDEN IN( 998) AND TIPO_BIEN = 'B'
+SELECT @PRECIO_UNIT = PREC_TOT_SOLES/CANT_ITEM FROM SIG_ORDEN_ITEM WHERE ano_eje =@ANO_EJE AND sec_ejec =@SEC_EJEC AND nro_orden =@NRO_ORDEN AND tipo_bien ='B' AND tipo_ppto =1
+
+SELECT @PRECIO_UNIT
+
+update sig_detalle_cta_almacen SET valor_cuenta = valor_cuenta * @PRECIO_UNIT 
+WHERE ano_eje =@ANO_EJE AND sec_ejec =@SEC_EJEC AND almacen =@almacen AND sec_almacen =@SEC_ALMACEN
+AND tipo_movimto =@TIPO_MOVIMTO  AND tipo_transac =@TIPO_TRANSAC AND tipo_ppto =1 
+AND nro_movimto =@NRO_MOVIMTO AND secuencia =1 AND sec_detalle =1 AND sec_ppto =1 AND sec_cuenta =1 
+
+/************************************************************************************************************************************/
+/************************************************************************************************************************************/
+-- ESTE CODIGO MARCA SE ACTUALIZA CUANDO SE CREA LA MARCA EN EL CODIGO DE ARRIBA DE CREACION DE MARCAS
+/*
+update sig_detalle_movim_almacen SET marca =33724 , estado_recep_alm =null , fecha_est_recep =null WHERE ano_eje =2022 AND sec_ejec =1345 
+AND almacen ='001' AND sec_almacen ='121' AND tipo_movimto ='R' AND tipo_transac =1 AND tipo_ppto =1 AND nro_movimto =1159 AND secuencia =1 
+AND sec_item =1 
+*/
+
+
+
+/************************************************************************************************************************************/
+/************************************************************************************************************************************/
+/*UPDATE sig_detalle_movim_almacen SET cant_articulo = 200000.000000, cant_recibido = 200000.000000, valor_total = 221400.200000 
+WHERE ano_eje = 2022 AND sec_ejec = 1345 AND almacen = '001' AND sec_almacen = '121' AND tipo_movimto = 'R' AND tipo_transac = 1 
+AND tipo_ppto = 1 AND nro_movimto = 1159 AND secuencia = 1 AND sec_detalle = 1 */
+
+
+UPDATE sig_detalle_movim_almacen SET cant_articulo = @CANT_ITEM, cant_recibido = @CANT_ITEM, valor_total = @CANT_ITEM * PRECIO_UNIT
+WHERE ano_eje = @ANO_EJE AND sec_ejec = @SEC_EJEC AND almacen = @almacen AND sec_almacen = @SEC_ALMACEN AND tipo_movimto = @TIPO_MOVIMTO AND tipo_transac = @TIPO_TRANSAC
+AND tipo_ppto = 1 AND nro_movimto = @NRO_MOVIMTO AND secuencia = 1 AND sec_detalle = 1
+
+
+/************************************************************************************************************************************/
+/************************************************************************************************************************************/
+/*update sig_detalle_cta_almacen SET mayor ='1301' , sub_cta ='080102' , tipo_d_h ='D' , ind_alma ='1' WHERE ano_eje =2022 AND sec_ejec =1345 
+AND almacen ='001' AND sec_almacen ='121' AND tipo_movimto ='R' AND tipo_transac =1 AND tipo_ppto =1 AND nro_movimto =1159 AND secuencia =1 
+AND sec_detalle =1 AND sec_cuenta =1 */
+
+-- ESTE CODIGO YA SE EJECUTO EN EL CODIGO DE INICIO
+
+/*
+select * from  sig_detalle_cta_almacen  WHERE ano_eje =2022 AND sec_ejec =1345 
+AND almacen ='001' AND sec_almacen ='121' AND tipo_movimto ='R' AND tipo_transac =1 AND tipo_ppto =1 AND nro_movimto =1159 AND secuencia =1 
+AND sec_detalle =1 AND sec_cuenta =1*/
+
+/************************************************************************************************************************************/
+/************************************************************************************************************************************/
+/*update sig_detalle_movim_ppto SET cant_articulo =200000.0000 WHERE ano_eje =2022 AND sec_ejec =1345 AND almacen ='001' AND sec_almacen ='121' 
+AND tipo_movimto ='R' AND tipo_transac =1 AND tipo_ppto =1 AND nro_movimto =1159 AND secuencia =1 AND sec_detalle =1 AND sec_ppto =1 */
+
+
+
+update sig_detalle_movim_ppto SET cant_articulo =@CANT_ITEM WHERE ano_eje =@ANO_EJE AND sec_ejec =@SEC_EJEC 
+AND almacen =@almacen AND sec_almacen =@SEC_ALMACEN
+AND tipo_movimto = @TIPO_MOVIMTO AND tipo_transac =@TIPO_TRANSAC AND tipo_ppto =1 AND nro_movimto =@NRO_MOVIMTO AND secuencia =1 AND sec_detalle =1 AND sec_ppto =1
+
+/************************************************************************************************************************************/
+/************************************************************************************************************************************/
+/*
+update sig_detalle_cta_almacen SET valor_cuenta =221400.2000 WHERE ano_eje =2022 AND sec_ejec =1345 AND almacen ='001' AND sec_almacen ='121' 
+AND tipo_movimto ='R' AND tipo_transac =1 AND tipo_ppto =1 AND nro_movimto =1159 AND secuencia =1 AND sec_detalle =1 AND sec_ppto =1 AND sec_cuenta =1 */
+
+
+--ESTE CODIGO ES PARA EXTRAER EL PRECIO REAL DEL PRODUCTO
+DECLARE @PRECIO_UNIT_DATA	numeric(10,9);
+SELECT @PRECIO_UNIT_DATA		= 0
+
+--SELECT @PRECIO_UNIT = PREC_TOT_SOLES/CANT_ITEM FROM SIG_ORDEN_ITEM WHERE ANO_EJE = 2022 AND SEC_EJEC = 1345 AND NRO_ORDEN IN( 998) AND TIPO_BIEN = 'B'
+SELECT @PRECIO_UNIT_DATA = PRECIO_UNIT FROM  sig_detalle_movim_almacen 
+WHERE ano_eje = @ANO_EJE AND sec_ejec = @SEC_EJEC AND almacen = @almacen AND sec_almacen = @SEC_ALMACEN
+AND tipo_movimto = @TIPO_MOVIMTO AND tipo_transac = @TIPO_TRANSAC 
+AND tipo_ppto = 1 AND nro_movimto = @NRO_MOVIMTO AND secuencia = 1 AND sec_detalle = 1
+
+--SELECT @PRECIO_UNIT_DATA
+
+update sig_detalle_cta_almacen SET valor_cuenta =@CANT_ITEM *  @PRECIO_UNIT_DATA 
+WHERE ano_eje =@ANO_EJE AND sec_ejec =@SEC_EJEC AND almacen =@almacen AND sec_almacen =@SEC_ALMACEN
+AND tipo_movimto =@TIPO_MOVIMTO AND tipo_transac =@TIPO_TRANSAC AND tipo_ppto =1 AND nro_movimto =@NRO_MOVIMTO 
+AND secuencia =1 AND sec_detalle =1 AND sec_ppto =1 AND sec_cuenta =1
+
+
+
+/************************************************************************************************************************************/
+/************************************************************************************************************************************/
+/*
+
+-- ESTE QUERY EN ESTE PUNTO ES ENVANO PORQUE NO TIENE TRACENDENCIA 
+
+update SIG_DETALLE_ALMACEN_LOTES SET FECHA_GENERA_EA ='1-1-1900' , FECHA_PENALIDAD ='1-1-1900' WHERE sec_ejec =1345 and ano_eje =2022 
+AND almacen ='001' AND sec_almacen ='121' AND tipo_movimto ='R' AND tipo_transac =1 AND tipo_ppto =1 AND nro_movimto =1159 AND secuencia =1 
+AND sec_detalle =1 AND sec_lote =1 */
+
+
+/************************************************************************************************************************************/
+/************************************************************************************************************************************/
+-- ENTAPA DE INSERT DE LOTES
+
+/*
+INSERT INTO sig_detalle_almacen_lotes ( ano_eje, sec_ejec, almacen, sec_almacen, tipo_movimto, tipo_transac, tipo_ppto, nro_movimto, secuencia, 
+sec_detalle, sec_lote, nro_lote, fecha_expiracion, cant_lote, cant_atendida, fecha_reg, estado_recep_alm, FECHA_EST_RECEP, FECHA_GENERA_EA, 
+FECHA_PENALIDAD ) 
+VALUES ( 2022.000000000000000, 1345.000000000000000, '001', '121', 'R', 1.000000000000000000, 1.000000000000000000, 1159.000000000000000, 
+1.000000000000000000, 1.000000000000000000, 1, '12345678', '5-25-2022 0:0:0.000', 200000.000000, 0.000000, 
+'6-2-2022 13:36:54.463', '2', '6-2-2022 13:36:54.463', '5-25-2022 0:0:0.000', '5-25-2022 0:0:0.000' )*/
+
+-- @nro_lote = ESTE DATO VIENE DESDE EL WMS
+
+INSERT INTO sig_detalle_almacen_lotes ( ano_eje, sec_ejec, almacen, sec_almacen, tipo_movimto, tipo_transac, tipo_ppto, nro_movimto, secuencia, 
+sec_detalle, sec_lote, nro_lote, fecha_expiracion, cant_lote, cant_atendida, fecha_reg, estado_recep_alm, FECHA_EST_RECEP, FECHA_GENERA_EA, 
+FECHA_PENALIDAD ) 
+VALUES ( @ANO_EJE, @SEC_EJEC, @almacen,@SEC_ALMACEN, @TIPO_MOVIMTO, @TIPO_TRANSAC, 1.000000000000000000, @NRO_MOVIMTO, 
+1.000000000000000000, 1.000000000000000000, 1, @nro_lote, @FECHA_MOVIMTO, @CANT_ITEM, 0.000000, 
+GETDATE(), '2', GETDATE(), @FECHA_MOVIMTO, @FECHA_MOVIMTO )
+
+/************************************************************************************************************************************/
+/************************************************************************************************************************************/
+
+/*
+INSERT INTO SIG_DETALLE_MOVIM_ALMACEN_EST ( sec_ejec , ANO_EJE , ALMACEN , SEC_ALMACEN , TIPO_MOVIMTO , TIPO_TRANSAC , TIPO_PPTO , 
+NRO_MOVIMTO , SECUENCIA , SEC_DETALLE , SEC_LOTE , SEC_ESTADO , ESTADO_RECEPCION , FECHA_EST_RECEP , CUSER_EST_RECEP ) 
+SELECT sec_ejec , ANO_EJE , ALMACEN , SEC_ALMACEN , TIPO_MOVIMTO , TIPO_TRANSAC , TIPO_PPTO , NRO_MOVIMTO , SECUENCIA , 
+SEC_DETALLE , 1 , 1 , ESTADO_RECEP_ALM , FECHA_EST_RECEP , 'USUAR199' 
+FROM SIG_DETALLE_ALMACEN_LOTES WHERE SEC_EJEC =1345 AND ANO_EJE =2022 AND ALMACEN ='001' AND SEC_ALMACEN ='121' 
+AND TIPO_MOVIMTO ='R' AND TIPO_TRANSAC =1 and tipo_ppto =1 AND nro_movimto =1159 AND secuencia =1 AND sec_detalle =1 and 
+sec_lote =1 and NOT EXISTS 
+( SELECT 1 FROM SIG_DETALLE_MOVIM_ALMACEN_EST hist 
+WHERE hist.SEC_EJEC =SIG_DETALLE_ALMACEN_LOTES.SEC_EJEC 
+AND hist.ANO_EJE =SIG_DETALLE_ALMACEN_LOTES.ANO_EJE 
+AND hist.ALMACEN =SIG_DETALLE_ALMACEN_LOTES.ALMACEN 
+and hist.SEC_ALMACEN =SIG_DETALLE_ALMACEN_LOTES.SEC_ALMACEN 
+and hist.TIPO_MOVIMTO =SIG_DETALLE_ALMACEN_LOTES.TIPO_MOVIMTO 
+AND hist.TIPO_TRANSAC =SIG_DETALLE_ALMACEN_LOTES.TIPO_TRANSAC 
+AND hist.tipo_ppto =SIG_DETALLE_ALMACEN_LOTES.tipo_ppto 
+AND hist.NRO_MOVIMTO =SIG_DETALLE_ALMACEN_LOTES.NRO_MOVIMTO 
+AND hist.SECUENCIA =SIG_DETALLE_ALMACEN_LOTES.SECUENCIA 
+AND hist.sec_detalle =SIG_DETALLE_ALMACEN_LOTES.sec_detalle 
+AND hist.SEC_LOTE =SIG_DETALLE_ALMACEN_LOTES.SEC_LOTE 
+AND hist.ESTADO_RECEPCION =SIG_DETALLE_ALMACEN_LOTES.ESTADO_RECEP_ALM ) */
+
+INSERT INTO SIG_DETALLE_MOVIM_ALMACEN_EST ( sec_ejec , ANO_EJE , ALMACEN , SEC_ALMACEN , TIPO_MOVIMTO , TIPO_TRANSAC , TIPO_PPTO , 
+NRO_MOVIMTO , SECUENCIA , SEC_DETALLE , SEC_LOTE , SEC_ESTADO , ESTADO_RECEPCION , FECHA_EST_RECEP , CUSER_EST_RECEP ) 
+SELECT sec_ejec , ANO_EJE , ALMACEN , SEC_ALMACEN , TIPO_MOVIMTO , TIPO_TRANSAC , TIPO_PPTO , NRO_MOVIMTO , SECUENCIA , 
+SEC_DETALLE , 1 , 1 , ESTADO_RECEP_ALM , FECHA_EST_RECEP , 'USUAR199' 
+FROM SIG_DETALLE_ALMACEN_LOTES 
+
+WHERE SEC_EJEC =@SEC_EJEC AND ANO_EJE =@ANO_EJE AND ALMACEN =@almacen AND SEC_ALMACEN =@SEC_ALMACEN
+AND TIPO_MOVIMTO =@TIPO_MOVIMTO AND TIPO_TRANSAC =@TIPO_TRANSAC and tipo_ppto =1 AND nro_movimto =@NRO_MOVIMTO AND secuencia =1 AND sec_detalle =1 and 
+sec_lote =1 
+
+and NOT EXISTS 
+( SELECT 1 FROM SIG_DETALLE_MOVIM_ALMACEN_EST hist 
+WHERE hist.SEC_EJEC =SIG_DETALLE_ALMACEN_LOTES.SEC_EJEC 
+AND hist.ANO_EJE =SIG_DETALLE_ALMACEN_LOTES.ANO_EJE 
+AND hist.ALMACEN =SIG_DETALLE_ALMACEN_LOTES.ALMACEN 
+and hist.SEC_ALMACEN =SIG_DETALLE_ALMACEN_LOTES.SEC_ALMACEN 
+and hist.TIPO_MOVIMTO =SIG_DETALLE_ALMACEN_LOTES.TIPO_MOVIMTO 
+AND hist.TIPO_TRANSAC =SIG_DETALLE_ALMACEN_LOTES.TIPO_TRANSAC 
+AND hist.tipo_ppto =SIG_DETALLE_ALMACEN_LOTES.tipo_ppto 
+AND hist.NRO_MOVIMTO =SIG_DETALLE_ALMACEN_LOTES.NRO_MOVIMTO 
+AND hist.SECUENCIA =SIG_DETALLE_ALMACEN_LOTES.SECUENCIA 
+AND hist.sec_detalle =SIG_DETALLE_ALMACEN_LOTES.sec_detalle 
+AND hist.SEC_LOTE =SIG_DETALLE_ALMACEN_LOTES.SEC_LOTE 
+AND hist.ESTADO_RECEPCION =SIG_DETALLE_ALMACEN_LOTES.ESTADO_RECEP_ALM ) 
+
+
+/************************************************************************************************************************************/
+/************************************************************************************************************************************/
+
+/*update SIG_DETALLE_ITEM_ALMACEN SET CANT_RECIBIDO =200000.000000 , cant_articulo =200000.000000 , valor_total =221400.200000 
+WHERE SEC_EJEC =1345 AND ANO_EJE =2022 AND ALMACEN ='001' AND SEC_ALMACEN ='121' AND TIPO_MOVIMTO ='R' AND TIPO_TRANSAC =1 
+AND TIPO_PPTO =1 AND nro_movimto =1159 AND secuencia =1 AND SEC_ITEM =1 */
+
+update SIG_DETALLE_ITEM_ALMACEN SET CANT_RECIBIDO = @CANT_ITEM , cant_articulo = @CANT_ITEM, valor_total =@CANT_ITEM *  @PRECIO_UNIT_DATA 
+WHERE SEC_EJEC =@SEC_EJEC AND ANO_EJE =@ANO_EJE AND ALMACEN =@almacen AND SEC_ALMACEN =@SEC_ALMACEN AND TIPO_MOVIMTO =@TIPO_MOVIMTO AND TIPO_TRANSAC = @TIPO_TRANSAC
+AND TIPO_PPTO =1 AND nro_movimto =@NRO_MOVIMTO AND secuencia =1 AND SEC_ITEM =1
+
+/************************************************************************************************************************************/
+/************************************************************************************************************************************/
+/*
+update SIG_DETALLE_MOVIM_ALMACEN SET CANT_RECIBIDO =200000.000000 , cant_articulo =200000.000000 , valor_total =221400.200000 
+WHERE SEC_EJEC =1345 AND ANO_EJE =2022 AND ALMACEN ='001' AND SEC_ALMACEN ='121' AND TIPO_MOVIMTO ='R' AND TIPO_TRANSAC =1 
+AND TIPO_PPTO =1 AND nro_movimto =1159 AND secuencia =1 AND sec_detalle =1 AND SEC_ITEM =1 */
+
+update SIG_DETALLE_MOVIM_ALMACEN SET CANT_RECIBIDO = @CANT_ITEM , cant_articulo = @CANT_ITEM, valor_total = @CANT_ITEM *  @PRECIO_UNIT_DATA 
+WHERE SEC_EJEC =@SEC_EJEC AND ANO_EJE =@ANO_EJE AND ALMACEN =@almacen AND SEC_ALMACEN =@SEC_ALMACEN AND TIPO_MOVIMTO = @TIPO_MOVIMTO AND TIPO_TRANSAC = @TIPO_TRANSAC 
+AND TIPO_PPTO =1 AND nro_movimto =@NRO_MOVIMTO AND secuencia =1 AND sec_detalle =1 AND SEC_ITEM =1 
+
+
+/************************************************************************************************************************************/
+/************************************************************************************************************************************/
+/*update sig_orden_item SET flag_recep ='2' , fecha_recep ='5-25-2022' , cant_recibida =403528.0000 
+WHERE ano_eje =2022 AND sec_ejec =1345 AND nro_orden =998 AND tipo_bien ='B' AND tipo_ppto =1 AND sec_orden =1 AND sec_item =1 */
+------
+
+-- QUERY POR REVISAR 
+-- ANALIZAR EL CAMPO CANT_RECIBIDA DE LA ORDEN EN QUE MOMENTO SE CAMBIA EL ESTADO 
+
+/*
+-- VARIBLES PARA UTLIZAR EN LOS WHERE
+WHERE ano_eje =@ANO_EJE and sec_ejec =@SEC_EJEC and almacen =@almacen and sec_almacen =@SEC_ALMACEN and tipo_movimto =@TIPO_MOVIMTO 
+and tipo_transac =@TIPO_TRANSAC and tipo_ppto =1 and nro_movimto =@NRO_MOVIMTO AND secuencia =1
+
+update sig_orden_item SET flag_recep ='2' , fecha_recep ='5-25-2022' , cant_recibida =403528.0000 
+WHERE ano_eje =2022 AND sec_ejec =1345 AND nro_orden =998 AND tipo_bien ='B' AND tipo_ppto =1 AND sec_orden =1 AND sec_item =1
+
+SET flag_recep ='2' , fecha_recep ='5-25-2022' , cant_recibida =403528.0000 
+select * from  sig_orden_item 
+WHERE ano_eje =2022 AND sec_ejec =1345  AND tipo_bien ='B'
+--AND nro_orden =998 AND tipo_bien ='B' AND tipo_ppto =1 AND sec_orden =1 AND sec_item =1
+order by nro_orden*/
+
+
+/************************************************************************************************************************************/
+/************************************************************************************************************************************/
+/*update sig_detalle_movim_almacen SET indi_recibido ='2' WHERE ano_eje =2022 AND sec_ejec =1345 AND almacen ='001' 
+AND sec_almacen ='121' AND tipo_movimto ='R' 
+AND tipo_transac =1 AND tipo_ppto =1 AND nro_movimto =1159 AND secuencia =1 AND sec_item =1 */
+
+update sig_detalle_movim_almacen SET indi_recibido ='2' WHERE ano_eje =@ANO_EJE AND sec_ejec =@SEC_EJEC AND almacen =@almacen
+AND sec_almacen = @SEC_ALMACEN AND tipo_movimto = @TIPO_MOVIMTO
+AND tipo_transac = @TIPO_TRANSAC AND tipo_ppto =1 AND nro_movimto =@NRO_MOVIMTO AND secuencia =1 AND sec_item =1
+
+/************************************************************************************************************************************/
+/************************************************************************************************************************************/
+
+/*update sig_orden_adquisicion SET flag_almacen ='2' WHERE ano_eje =2022 AND sec_ejec =1345 AND nro_orden =998 AND tipo_bien ='B' AND tipo_ppto =1 */
+
+update sig_orden_adquisicion SET flag_almacen ='2' WHERE ano_eje =@ANO_EJE AND sec_ejec =@SEC_EJEC AND nro_orden =@NRO_ORDEN AND tipo_bien ='B' AND tipo_ppto =1
+
+/************************************************************************************************************************************/
+/************************************************************************************************************************************/
+/*update sig_detalle_movim_almacen SET cant_recibido =200000.0000 , cant_articulo =200000.0000 , valor_total =221400.2000 
+WHERE ano_eje =2022 AND sec_ejec =1345 AND almacen ='001' AND sec_almacen ='121' AND tipo_movimto ='R' AND tipo_transac =1 
+AND tipo_ppto =1 AND nro_movimto =1159 AND secuencia =1 AND sec_detalle =1 */
+
+
+update sig_detalle_movim_almacen SET cant_recibido = @CANT_ITEM, cant_articulo = @CANT_ITEM, valor_total = @CANT_ITEM *  @PRECIO_UNIT_DATA 
+WHERE ano_eje =@ANO_EJE AND sec_ejec =@SEC_EJEC AND almacen =@almacen AND sec_almacen =@SEC_ALMACEN AND tipo_movimto = @TIPO_MOVIMTO AND tipo_transac =@TIPO_TRANSAC 
+AND tipo_ppto =1 AND nro_movimto =@NRO_MOVIMTO AND secuencia =1 AND sec_detalle =1
+
+
+/************************************************************************************************************************************/
+/************************************************************************************************************************************/
+/*update sig_detalle_movim_ppto SET cant_articulo =200000.0000 WHERE ano_eje =2022 AND sec_ejec =1345 AND almacen ='001' AND sec_almacen ='121' 
+AND tipo_movimto ='R' AND tipo_transac =1 AND tipo_ppto =1 AND nro_movimto =1159 AND secuencia =1 AND sec_detalle =1 AND sec_ppto =1 */
+
+update sig_detalle_movim_ppto SET cant_articulo = @CANT_ITEM WHERE ano_eje =@ANO_EJE AND sec_ejec =@SEC_EJEC AND almacen = @almacen AND sec_almacen = @SEC_ALMACEN
+AND tipo_movimto = @TIPO_MOVIMTO AND tipo_transac = @TIPO_TRANSAC AND tipo_ppto =1 AND nro_movimto =@NRO_MOVIMTO AND secuencia =1 AND sec_detalle =1 AND sec_ppto =1 
+
+/************************************************************************************************************************************/
+/************************************************************************************************************************************/
+/*update sig_detalle_cta_almacen SET valor_cuenta =221400.2000 WHERE ano_eje =2022 AND sec_ejec =1345 AND almacen ='001' 
+AND sec_almacen ='121' AND tipo_movimto ='R' AND tipo_transac =1 AND tipo_ppto =1 AND nro_movimto =1159 AND secuencia =1 
+AND sec_detalle =1 AND sec_ppto =1 AND sec_cuenta =1 */
+
+update sig_detalle_cta_almacen SET valor_cuenta =@CANT_ITEM *  @PRECIO_UNIT_DATA  WHERE ano_eje =@ANO_EJE AND sec_ejec =@SEC_EJEC AND almacen = @almacen
+AND sec_almacen = @SEC_ALMACEN AND tipo_movimto = @TIPO_MOVIMTO AND tipo_transac = @TIPO_TRANSAC AND tipo_ppto =1 AND nro_movimto =@NRO_MOVIMTO AND secuencia =1 
+AND sec_detalle =1 AND sec_ppto =1 AND sec_cuenta =1
+
+
+COMMIT TRANSACTION;
+end 
+
+
+USE [SIGA_1345]
+GO
+/****** Object:  StoredProcedure [dbo].[SP_WMS_PROVEEDOR]    Script Date: 11/07/2022 20:22:39 ******/
+SET ANSI_NULLS ON
+GO
+SET QUOTED_IDENTIFIER ON
+GO
+ALTER PROCEDURE [dbo].[SP_WMS_PROVEEDOR](
+	@ESTADO CHAR
+	
+)
+AS
+BEGIN
+	SELECT 
+			A.PROVEEDOR,A.NRO_RUC,A.GIRO_GENERAL,A.NOMBRE_PROV,A.TELEFONOS,A.DIRECCION,A.PAIS,B.NOMBRE,
+			CASE WHEN B.NOMBRE IN ('PERU') THEN 'NACIONAL' ELSE 'INTERNACIONAL' END NACIONALIDAD
+				FROM SIG_CONTRATISTAS AS A
+					INNER JOIN PAIS AS B
+						ON		A.PAIS		=	B.PAIS
+		WHERE
+				A.ESTADO	=	'P'
+END
+-------------------------------------------------------
+-------------------------------------------------------
+-- ANALISIS DEL TRACE DEL SUB_PROCESO RECEPCION DE BIENES A ALMACEN NEA 
+-- Querys INSERT
+/*
+
+ANALISTA		:	HUMBERTO INOPE BENITES
+FECHA			:	25/05/2022
+DATA_ORIGEN		:	SIGA_DEMO
+IP				:	192.1468.10.108
+VERSION SIGA	:	20.06.04.U2
+PROCEDIMIENTO	:	PROCESO ALMACEN
+SUB_PROCESO		:	RECPCION DE BIENES A ALMACEN
+CODIGO			:	RAB001
+
+*/
+-------------------------------------------------------------------
+/*
+INGRESO DE DATOS DEL WMS
+-----------------------------------------------
+TIPO DE DATO	DATO			DATO EJEMPLO
+-----------------------------------------------
+numeric			@ANO_EJE		2022
+numeric			@SEC_EJEC		1345
+numeric			@NRO_ORDEN		998
+char			@OBSERVACION	'prueba '
+DATE			@FECHA_MOVIMTO	'3-16-2022 0:0:0.000'
+char			@NRO_GUIA		'siaf 225'
+char			@MES_MOVIMTO	'03'
+datetime		@FECHA_REG		'5-19-2022 15:6:35.476'
+char			@CUSER_ID		'USUAR199' - CREAR USUARIO PARA PRUEBA EN EL WMS
+char			@EQUIPO_REG		'LAPTOP-7D0LVIN0' 
+char			@TIPO_MOVIMTO	'R'
+numeric			@TIPO_TRANSAC	1
+
+*/
+
+----------------------------------------------------------
+-- VARIABLES PARA EL INSERT DE LA TABLA sig_movim_almacen
+---------------------------------------------------------
+/*
+@ANO_EJE		2022
+@SEC_EJEC		1345
+@NRO_ORDEN		998
+@OBSERVACION	'prueba '
+@FECHA_MOVIMTO	'3-16-2022 0:0:0.000'
+@NRO_GUIA		'siaf 225'
+@MES_MOVIMTO	'03'
+@FECHA_REG		'5-19-2022 15:6:35.476'
+@CUSER_ID		'USUAR199' - CREAR USUARIO PARA PRUEBA EN EL WMS
+@EQUIPO_REG		'LAPTOP-7D0LVIN0'
+
+@TIPO_MOVIMTO	'R'
+@TIPO_TRANSAC	1
+
+@almacen		
+@SEC_ALMACEN	
+@ano_orden		
+@proveedor		
+@tipo_uso		
+@tipo_bien		
+@tipo_ppto		
+@tipo_proceso	
+@empleado
+*/
+
+EXEC [SP_WMS_INSERTAR_RECEPCION_NEA_E1] 2022,1345,754,'001','121','R',9,'PRUEBA','6-6-2022 0:0:0.000', 'FET 1890-22'
+
+--prueba ','6-19-2022 15:6:35.476','siaf 225','06','6-19-2022 15:6:35.476',
+	--	'USUAR199','LAPTOP-7D0LVIN0','R',1
+
+select * from sig_movim_almacen where ANO_EJE=2022 AND tipo_movimto ='R' AND tipo_transac =9 and ALMACEN	='001' AND SEC_ALMACEN ='121' and NRO_MOVIMTO > (224) 
+select * from sig_secuencia_mov_almacen where  ANO_EJE=2022 and NRO_MOVIMTO > (225)  AND tipo_movimto ='R' AND tipo_transac =9 and ALMACEN	='001' AND SEC_ALMACEN ='121'
+select * from sig_detalle_item_almacen where  ANO_EJE=2022 and NRO_MOVIMTO > (225)  AND tipo_movimto ='R' AND tipo_transac =9 and ALMACEN	='001' AND SEC_ALMACEN ='121'
+select * from sig_detalle_movim_almacen where  ANO_EJE=2022 and NRO_MOVIMTO > (225)  AND tipo_movimto ='R' AND tipo_transac =9 and ALMACEN	='001' AND SEC_ALMACEN ='121'
+select * from sig_detalle_movim_ppto where  ANO_EJE=2022 and NRO_MOVIMTO > (225)  AND tipo_movimto ='R' AND tipo_transac = 9 and ALMACEN	='001' AND SEC_ALMACEN ='121'
+select * from sig_detalle_cta_almacen where  ANO_EJE=2022 and NRO_MOVIMTO > (225)  AND tipo_movimto ='R' AND tipo_transac = 9 and ALMACEN	='001' AND SEC_ALMACEN ='121'
+
+select * from sig_detalle_almacen_lotes where  ANO_EJE=2022 and NRO_MOVIMTO > (1650)  AND tipo_movimto ='R' AND tipo_transac =1 and ALMACEN	='001' AND SEC_ALMACEN ='121'
+select * from SIG_DETALLE_MOVIM_ALMACEN_EST where  ANO_EJE=2022 and NRO_MOVIMTO > (1650)  AND tipo_movimto ='R' AND tipo_transac =1 and ALMACEN	='001' AND SEC_ALMACEN ='121'
+
+CREATE PROCEDURE [dbo].[SP_WMS_INSERTAR_RECEPCION_NEA_E1](
+	@ANO_EJE		NUMERIC,
+	@SEC_EJEC		NUMERIC,	
+	@NRO_REQUERIM	NUMERIC,
+	@almacen		char(3), 
+	@SEC_ALMACEN	char(3),
+	@TIPO_MOVIMTO	CHAR(1),
+	@TIPO_TRANSAC	NUMERIC,
+	@OBSERVACION	CHAR(150),
+	@FECHA_MOVIMTO	DATETIME,
+	@NRO_GUIA		CHAR(20)
+
+	/*
+	
+	@FECHA_MOVIMTO	DATETIME,
+	@NRO_GUIA		CHAR(20),
+	@MES_MOVIMTO	CHAR(2),
+	@FECHA_REG		DATETIME,
+	@CUSER_ID		CHAR(20),
+	@EQUIPO_REG		CHAR(20),
+	*/
+	
+)
+AS
+BEGIN
+/*****************************************************************************************************************************/
+-- EXTRAER DATOS DE CABECERA DE LA NEA - TABLA SIG_REQ_ENTRADA_ALMACEN
+DECLARE @tipo_ppto	NUMERIC; 
+
+SELECT @tipo_ppto	= 1 
+
+BEGIN TRANSACTION; 
+/*****************************************************************************************************************************/
+
+
+SELECT * FROM SIG_REQ_ENTRADA_ALMACEN where ANO_EJE=2022 AND TIPO_MOVIMTO='R' AND TIPO_TRANSAC=9 AND NRO_REQUERIM = 754
+SELECT * FROM SIG_REQ_ENTRADA_ALMACEN_DET where ANO_EJE=2022 AND NRO_REQUERIM = 754
+
+/*****************************************************************************************************************************/
+-- EXTRAER DATOS DE CABECERA DE LA NEA - TABLA SIG_REQ_ENTRADA_ALMACEN
+DECLARE @NRO_FACTURA	char(20);  
+DECLARE @NOM_PROVE		CHAR(50);
+
+SELECT @NRO_FACTURA			= '' 
+SELECT @NOM_PROVE			= '' 
+
+SELECT
+		@NRO_FACTURA	=	NRO_FACTURA,
+		@NOM_PROVE		=	NOMBRE_PROVEEDOR
+FROM SIG_REQ_ENTRADA_ALMACEN 
+where ANO_EJE=2022 AND TIPO_MOVIMTO='R' AND TIPO_TRANSAC=9 AND NRO_REQUERIM = 754
+
+
+----------------------------------------------------------------------------
+-- CODIGO 003 - QUERY CALCULAR EL MAXIMO NRO DE MOVIMIENTO A TRAVES DEL CAMPO NRO_MOVIMTO
+----------------------------------------------------------------------------
+
+DECLARE @nro_mvimto numeric(5,0);       
+SELECT @nro_mvimto = 0;    
+SELECT @nro_mvimto  = max ( nro_movimto ) + 1
+FROM 	sig_movim_almacen
+WHERE ano_eje =@ANO_EJE AND sec_ejec =@SEC_EJEC AND almacen =@almacen AND sec_almacen =@SEC_ALMACEN 
+AND tipo_movimto =@TIPO_MOVIMTO AND tipo_transac =@TIPO_TRANSAC AND tipo_ppto =1 
+
+/*****************************************************************************************************************************/
+/*
+INSERT INTO sig_movim_almacen ( ANO_EJE, SEC_EJEC, ALMACEN, SEC_ALMACEN, TIPO_MOVIMTO, TIPO_TRANSAC, NRO_MOVIMTO, PROC_GUIA, 
+OBSERVACION, NRO_FACTURA, FECHA_MOVIMTO, TIPO_USO, TIPO_DOCUMTO, NRO_GUIA, ESTADO_KARDEX, NOMBRE_PROVEEDOR, MES_MOVIMTO, 
+FECHA_REG, CUSER_ID, EQUIPO_REG, TIPO_BIEN, TIPO_PPTO, TIPO_PROCESO, TIPO_ORIGEN, FLAG_MOVIMTO, FLAG_ESTRATEGICO, NRO_REQUERIM ) 
+VALUES ( 2022.000000000000000, 1345.000000000000000, '001', '121', 'R', 9, 226.0000000000000000, '02', 'PRUEBA', 'FET 1890-22', 
+'6-6-2022 0:0:0.000', 'C', '045', 'SIAF999999', 'N', 'LABORATORIOS AC FARMA S.A.', '06', '7-6-2022 16:2:0.226', 'USUAR199', 'LAPTOP-7D0LVIN0', 
+'', 1.000000000000000000, '', '0', '0', 'N', 754 )*/
+
+INSERT INTO sig_movim_almacen ( ANO_EJE, SEC_EJEC, ALMACEN, SEC_ALMACEN, TIPO_MOVIMTO, TIPO_TRANSAC, NRO_MOVIMTO, 
+PROC_GUIA,OBSERVACION, NRO_FACTURA, FECHA_MOVIMTO, TIPO_USO, TIPO_DOCUMTO, NRO_GUIA, ESTADO_KARDEX, NOMBRE_PROVEEDOR, MES_MOVIMTO, 
+FECHA_REG, CUSER_ID, EQUIPO_REG, TIPO_BIEN, TIPO_PPTO, TIPO_PROCESO, TIPO_ORIGEN, FLAG_MOVIMTO, FLAG_ESTRATEGICO, NRO_REQUERIM ) 
+VALUES ( @ANO_EJE, @SEC_EJEC, @almacen, @SEC_ALMACEN,  @TIPO_MOVIMTO, @TIPO_TRANSAC, @nro_mvimto, '02',  @OBSERVACION, @NRO_FACTURA,
+@FECHA_MOVIMTO, 'C', '045', @NRO_GUIA, 'N', @NOM_PROVE, '06', GETDATE(), 'USUAR199', 'LAPTOP-7D0LVIN0','', 1.000000000000000000, '', '0', '0', 'N', @NRO_REQUERIM )
+
+/*****************************************************************************************************************************/
+
+/*
+INSERT INTO sig_secuencia_mov_almacen ( ano_eje , sec_ejec , almacen , sec_almacen , tipo_movimto , tipo_transac , tipo_ppto , nro_movimto , secuencia ) 
+VALUES ( 2022 , 1345 , '001' , '121' , 'R' , 9 , 1 , 226 , 1 )  */
+
+INSERT INTO sig_secuencia_mov_almacen ( ano_eje , sec_ejec , almacen , sec_almacen , tipo_movimto , tipo_transac , tipo_ppto , nro_movimto , secuencia ) 
+VALUES ( @ANO_EJE , @SEC_EJEC , @almacen ,  @SEC_ALMACEN ,@TIPO_MOVIMTO , @TIPO_TRANSAC , @tipo_ppto ,@nro_mvimto , 1 ) 
+
+
+/*****************************************************************************************************************************/
+
+/*INSERT INTO sig_detalle_item_almacen ( ano_eje , sec_ejec , almacen , sec_almacen , tipo_movimto , tipo_transac , tipo_ppto , nro_movimto , secuencia , 
+sec_item , tipo_bien , grupo_bien , clase_bien , familia_bien , item_bien , marca , activo_fijo , cant_adquirido , medida_adquis , cant_recibido , 
+cant_articulo , unidad_medida , precio_unit , valor_total , presentacion , tipo_marca , sec_modelo , fecha_reg , cuser_id , equipo_reg ) 
+VALUES ( 2022 , 1345 , '001' , '121' , 'R' , 1 , 1 , 1159 , 1 , 1 , 'B' , '58' , '03' , '0019' , '0002' , 328 , 'N' , 458598.0000 , 112 , 
+255070.0000 , 255070.0000 , 112 , 1.107001 , 282362.60 , null , '1' , null , '5-25-2022 12:57:5.480' , 'USUAR199' , 'LAPTOP-7D0LVIN0' ) 
+*/
+
+
+
+/*
+
+INSERT INTO sig_detalle_item_almacen
+  ( ano_eje , sec_ejec , almacen , sec_almacen , tipo_movimto , tipo_transac , tipo_ppto , nro_movimto , secuencia ,
+sec_item , tipo_bien , grupo_bien , clase_bien , familia_bien , item_bien , marca , activo_fijo , cant_adquirido , medida_adquis , cant_recibido , 
+cant_articulo , unidad_medida , precio_unit , valor_total , presentacion , tipo_marca , sec_modelo , fecha_reg , cuser_id , equipo_reg 
+  )
+     SELECT
+			@ANO_EJE AS 'ANO_EJE', @SEC_EJEC AS 'SEC_EJEC', @almacen AS 'ALMACEN',  @SEC_ALMACEN AS 'SEC_ALMACEN', 
+			@TIPO_MOVIMTO AS 'TIPO_MOVIMTO', @TIPO_TRANSAC AS 'TIPO_TRANSAC', @tipo_ppto AS 'tipo_ppto' , @nro_mvimto AS 'nro_mvimto',
+			1 'secuencia',
+			sig_orden_item.sec_item , 'B',sig_orden_item.grupo_bien , sig_orden_item.clase_bien , sig_orden_item.familia_bien , 
+			sig_orden_item.item_bien , 
+			sig_orden_item.marca,catalogo_bien_serv.flag_activo ,sig_orden_item.cant_item + sig_orden_item.cant_modif ,
+			sig_orden_item.unidad_medida,
+			(sig_orden_item.cant_item + sig_orden_item.cant_modif -sig_orden_item.cant_recibida),
+			(sig_orden_item.cant_item + sig_orden_item.cant_modif -sig_orden_item.cant_recibida),sig_orden_item.unidad_medida,
+			 sig_orden_item.prec_unit_moneda,
+			 ((sig_orden_item.cant_item-(sig_orden_item.cant_item + sig_orden_item.cant_modif -sig_orden_item.cant_recibida))*sig_orden_item.prec_unit_moneda),
+			 --(sig_orden_item.prec_unit_moneda*sig_orden_item.cant_recibida),precio_unit			 
+			null,'1',null,@FECHA_REG,@CUSER_ID,@EQUIPO_REG
+			 --'5-25-2022 12:57:5.480' , 'USUAR199' , 'LAPTOP-7D0LVIN0' 
+		FROM 
+			sig_orden_adquisicion , sig_orden_secuencia , sig_orden_item , catalogo_bien_serv 
+		WHERE 
+				sig_orden_adquisicion.ano_eje =sig_orden_secuencia.ano_eje 
+			and sig_orden_adquisicion.sec_ejec =sig_orden_secuencia.sec_ejec 
+			and sig_orden_adquisicion.nro_orden =sig_orden_secuencia.nro_orden 
+			and sig_orden_adquisicion.tipo_bien =sig_orden_secuencia.tipo_bien 
+			and sig_orden_adquisicion.tipo_ppto =sig_orden_secuencia.tipo_ppto 
+			and sig_orden_secuencia.ano_eje =sig_orden_item.ano_eje 
+			and sig_orden_secuencia.sec_ejec =sig_orden_item.sec_ejec 
+			and sig_orden_secuencia.nro_orden =sig_orden_item.nro_orden 
+			and sig_orden_secuencia.tipo_bien =sig_orden_item.tipo_bien 
+			and sig_orden_secuencia.tipo_ppto =sig_orden_item.tipo_ppto 
+			and sig_orden_secuencia.sec_orden =sig_orden_item.sec_orden 
+			and catalogo_bien_serv.sec_ejec =sig_orden_item.sec_ejec 
+			and catalogo_bien_serv.tipo_bien =sig_orden_item.tipo_bien 
+			and catalogo_bien_serv.grupo_bien =sig_orden_item.grupo_bien 
+			and catalogo_bien_serv.clase_bien =sig_orden_item.clase_bien 
+			and catalogo_bien_serv.familia_bien =sig_orden_item.familia_bien 
+			and catalogo_bien_serv.item_bien =sig_orden_item.item_bien 
+			and sig_orden_item.ano_eje =@ANO_EJE
+			AND sig_orden_item.sec_ejec =@SEC_EJEC 
+			AND sig_orden_item.nro_orden =@NRO_ORDEN
+			AND sig_orden_item.tipo_bien ='B' 
+			AND sig_orden_item.tipo_ppto =@tipo_ppto
+			AND sig_orden_item.sec_orden =1 
+	--AND sig_orden_item.flag_recep <> '3' 
+	order by sig_orden_item.sec_item 
+	*/
+-----------------------------------------------------------------------------
+
+	
+/**********************************************************************************************************************************/
+/*
+INSERT INTO sig_detalle_movim_almacen ( ano_eje , sec_ejec , almacen , sec_almacen , tipo_movimto , tipo_transac , tipo_ppto , nro_movimto , secuencia , sec_detalle , sec_item , tipo_bien , grupo_bien , clase_bien , familia_bien , item_bien , marca , operacion , clasificador , activo_fijo , tipo_activo , fecha_entrada , cant_adquirido , medida_adquis , cant_recibido , cant_articulo , unidad_medida , precio_unit , precio_moneda , moneda , fecha_movimto , precio_promed , mes_proceso , valor_total , fecha_reg , cuser_id , equipo_reg , mayor , sub_cta , cant_atendida , tipo_marca , flag_exo_impto , flag_credito_fiscal , tipo_uso , sec_modelo ) 
+VALUES ( 2022 , 1345 , '001' , '121' , 'R' , 1 , 1 , 1159 , 1 , 1 , 1 , 'B' , '58' , '03' , '0019' , '0002' , 328 , 0 , '2.3. 1  8. 1  2' , 'N' ,
+'' , null , 458598.0000 , 112 , 255070.0000 , 255070.0000 , 112 , 1.107001 , 1.107001 , 'S/.' , '5-25-2022' , 0 , '05' , 282362.6000 , '5-25-2022 12:57:5.480' , 'USUAR199' , 'LAPTOP-7D0LVIN0' , '1301' , '080102' , 0 , '1' , '0' , 'N' , 'C' , null ) 
+
+*/
+INSERT INTO SIG_DETALLE_MOVIM_ALMACEN ( sec_ejec , ANO_EJE , ALMACEN , SEC_ALMACEN , TIPO_MOVIMTO , TIPO_TRANSAC , TIPO_PPTO , NRO_MOVIMTO , 
+SECUENCIA , SEC_DETALLE , SEC_ITEM , CENTRO_COSTO , TIPO_BIEN , GRUPO_BIEN , CLASE_BIEN , FAMILIA_BIEN , ITEM_BIEN , MARCA , CLASIFICADOR ,
+MAYOR , SUB_CTA , OPERACION , ACTIVO_FIJO , TIPO_ACTIVO , FECHA_ENTRADA , CANT_ADQUIRIDO , MEDIDA_ADQUIS , CANT_RECIBIDO , CANT_ARTICULO , 
+UNIDAD_MEDIDA , CANT_DEVUELTA , PRECIO_UNIT , PRECIO_MONEDA , MONEDA , VALOR_TOTAL , FECHA_MOVIMTO , INDI_RECIBIDO , PRECIO_PROMED , 
+MES_PROCESO , CANT_ATENDIDA , STOCK_ACTUAL , VALOR_ACTUAL , FECHA_REG , CUSER_ID , EQUIPO_REG , TIPO_MARCA , FLAG_EXO_IMPTO , TIPO_USO ) 
+VALUES ( 1345 , 2022 , '001' , '121' , 'R' , 9 , 1 , 226 , 1 , 1 , NULL , NULL , 'B' , '58' , '33' , '0100' , '0007' , 32099 , '0' , NULL , NULL , 0 , 'N' , '0' , 
+NULL , 25 , 112 , 25 , 25 , 112 , 0 , 2.502 , 2.502 , 'S/.' , 62.55 , '6-6-2022' , NULL , 0 , '06' , 0 , 0 , 0 , '7-6-2022 16:2:0.226' , 
+'USUAR199' , 'LAPTOP-7D0LVIN0' , '1' , '0' , 'C' ) 
+
+INSERT INTO sig_detalle_movim_almacen ( ano_eje , sec_ejec , almacen , sec_almacen , tipo_movimto , tipo_transac , tipo_ppto , nro_movimto , secuencia , 
+	sec_detalle , sec_item , tipo_bien , grupo_bien , clase_bien , familia_bien , item_bien , marca , operacion , clasificador , activo_fijo , tipo_activo 
+	, fecha_entrada , cant_adquirido , medida_adquis , cant_recibido , cant_articulo , unidad_medida , precio_unit , 
+	  precio_moneda , moneda , fecha_movimto , precio_promed , mes_proceso , 
+	  valor_total , fecha_reg , cuser_id , equipo_reg , mayor , sub_cta , cant_atendida , tipo_marca , flag_exo_impto, flag_credito_fiscal , tipo_uso , sec_modelo ) 
+		SELECT 
+			@ANO_EJE AS 'ANO_EJE', @SEC_EJEC AS 'SEC_EJEC', @almacen AS 'ALMACEN',  @SEC_ALMACEN AS 'SEC_ALMACEN', 
+			@TIPO_MOVIMTO AS 'TIPO_MOVIMTO', @TIPO_TRANSAC AS 'TIPO_TRANSAC', @tipo_ppto AS 'tipo_ppto' , @nro_mvimto AS 'nro_mvimto',
+			1 'secuencia',
+			ROW_NUMBER () OVER (ORDER BY a.ANO_EJE) AS sec_detalle, c.sec_item,b.TIPO_BIEN, c.GRUPO_BIEN,c.CLASE_BIEN,c.FAMILIA_BIEN,c.ITEM_BIEN,c.MARCA
+			,0 operacion,d.CLASIFICADOR,'N' activo_fijo,'' tipo_activo,null fecha_entrada,			
+			c.cant_item + c.cant_modif ,c.unidad_medida,(c.cant_item + c.cant_modif -c.cant_recibida),(c.cant_item + c.cant_modif -c.cant_recibida),c.unidad_medida,
+			c.prec_unit_moneda,c.prec_unit_moneda,a.moneda,
+			@FECHA_REG,0,@MES_MOVIMTO,
+			(c.cant_item + c.cant_modif -c.cant_recibida)*c.prec_unit_moneda,
+			@FECHA_REG,@CUSER_ID,@EQUIPO_REG,
+			e.mayor , e.sub_cta	,0 ,c.tipo_marca,0,'N',d.tipo_uso,null
+			FROM 
+				sig_orden_adquisicion a
+					left join SIG_ORDEN_SECUENCIA b
+							on 
+								a.ano_eje		=	b.ano_eje 
+							AND a.sec_ejec		=	b.sec_ejec 
+							AND a.nro_orden		=	b.nro_orden 
+							AND a.tipo_bien		=	b.tipo_bien 
+					left join SIG_ORDEN_ITEM c
+						on 
+							b.ano_eje		=	c.ano_eje 
+						AND b.sec_ejec		=	c.sec_ejec 
+						AND b.nro_orden		=	c.nro_orden 
+						AND b.tipo_bien		=	c.tipo_bien 
+						AND b.tipo_ppto		=	c.tipo_ppto
+						AND b.sec_orden		=	c.sec_orden
+					left join sig_orden_item_ppto d
+						on 
+								c.ano_eje		=	d.ano_eje 
+							AND c.sec_ejec		=	d.sec_ejec 
+							AND c.nro_orden		=	d.nro_orden 
+							AND c.tipo_bien		=	d.tipo_bien 
+							AND c.tipo_ppto		=	d.tipo_ppto
+							AND c.sec_orden		=	d.sec_orden
+							AND c.sec_item		=	d.sec_item
+					left join sig_familia_cuenta_ejecutora e
+						on 
+								c.ano_eje		=	e.ano_eje 
+							AND c.tipo_bien		=	e.tipo_bien 
+							AND c.GRUPO_BIEN	=	e.grupo_bien
+							AND c.CLASE_BIEN	=	e.CLASE_BIEN
+							AND c.FAMILIA_BIEN	=	e.FAMILIA_BIEN
+							AND a.TIPO_USO		=	e.TIPO_USO
+							AND d.CLASIFICADOR	=	e.CLASIFICADOR
+				WHERE 
+							a.ano_eje		=	@ANO_EJE  
+					AND		a.sec_ejec		=	@SEC_EJEC 
+					AND		a.nro_orden		=	@NRO_ORDEN 
+					AND		a.tipo_bien		=	'B' 
+					AND		a.tipo_ppto		=	@tipo_ppto
+
+--------------------------------------------------------------------
+		SELECT
+			ANO_EJE,
+			NRO_REQUERIM,
+			FECHA_REQUERIM,
+			NOMBRE_PROVEEDOR,
+			GRUPO_BIEN,
+			CLASE_BIEN,
+			FAMILIA_BIEN,
+			ITEM_BIEN,
+			TIPO_MARCA,
+			MARCA,
+			ESPECIFICACIONES,
+			UNIDAD_MEDIDA,
+			ACTIVO_FIJO,
+			NOMBRE_ITEM,
+			CANT_ARTICULO,
+			PRECIO_UNIT,
+			(CANT_ARTICULO - CANT_USADA) CANT_DISPONIBLE,
+			valor_total - ( round(Coalesce(CANT_USADA,0)*precio_unit,2))  VALOR_TOTAL,
+			SEC_REQUERIM
+		FROM(
+		SELECT EAL.ANO_EJE,
+			EAL.NRO_REQUERIM,
+			EAL.FECHA_REQUERIM,
+			EAL.NOMBRE_PROVEEDOR,
+			EAD.GRUPO_BIEN,
+			EAD.CLASE_BIEN,
+			EAD.FAMILIA_BIEN,
+			EAD.ITEM_BIEN,
+			EAD.TIPO_MARCA,
+			EAD.MARCA,
+			EAD.ESPECIFICACIONES,
+			EAD.UNIDAD_MEDIDA,
+			EAD.ACTIVO_FIJO,
+			CBS.NOMBRE_ITEM,
+			EAD.PRECIO_UNIT,
+			EAD.CANT_ARTICULO,
+			EAD.VALOR_TOTAL,
+			COALESCE((
+				SELECT SUM(DMA.CANT_RECIBIDO)
+				FROM SIG_MOVIM_ALMACEN SMA
+				JOIN SIG_DETALLE_MOVIM_ALMACEN  DMA
+					ON DMA.SEC_EJEC = SMA.SEC_EJEC
+					AND DMA.ANO_EJE = SMA.ANO_EJE
+					AND DMA.ALMACEN = SMA.ALMACEN
+					AND DMA.SEC_ALMACEN = SMA.SEC_ALMACEN
+					AND DMA.TIPO_MOVIMTO = SMA.TIPO_MOVIMTO
+					AND DMA.TIPO_TRANSAC = SMA.TIPO_TRANSAC
+					AND DMA.TIPO_PPTO = SMA.TIPO_PPTO
+					AND DMA.NRO_MOVIMTO = SMA.NRO_MOVIMTO
+				WHERE SMA.ANO_EJE = EAL.ANO_EJE
+					AND SMA.SEC_EJEC = EAL.SEC_EJEC
+					AND SMA.TIPO_MOVIMTO = EAL.TIPO_MOVIMTO
+					AND SMA.TIPO_TRANSAC = EAL.TIPO_TRANSAC
+					AND SMA.NRO_REQUERIM = EAL.NRO_REQUERIM
+					AND SMA.TIPO_MOVIMTO = EAL.TIPO_MOVIMTO
+					AND SMA.TIPO_TRANSAC = EAL.TIPO_TRANSAC
+					AND DMA.TIPO_BIEN = EAD.TIPO_BIEN
+					AND DMA.GRUPO_BIEN = EAD.GRUPO_BIEN
+					AND DMA.CLASE_BIEN = EAD.CLASE_BIEN
+					AND DMA.FAMILIA_BIEN = EAD.FAMILIA_BIEN
+					AND DMA.ITEM_BIEN = EAD.ITEM_BIEN
+					AND DMA.MARCA = EAD.MARCA
+
+			), 0) CANT_USADA,
+			EAD.SEC_REQUERIM
+	
+		FROM SIG_REQ_ENTRADA_ALMACEN EAL
+		JOIN SIG_REQ_ENTRADA_ALMACEN_DET EAD
+			ON EAD.SEC_EJEC = EAL.SEC_EJEC
+			AND EAD.ANO_EJE = EAL.ANO_EJE
+			AND EAD.NRO_REQUERIM = EAL.NRO_REQUERIM
+		LEFT JOIN CATALOGO_BIEN_SERV CBS
+			ON CBS.SEC_EJEC = EAD.SEC_EJEC
+			AND CBS.TIPO_BIEN = EAD.TIPO_BIEN
+			AND CBS.GRUPO_BIEN = EAD.GRUPO_BIEN
+			AND CBS.CLASE_BIEN = EAD.CLASE_BIEN
+			AND CBS.FAMILIA_BIEN = EAD.FAMILIA_BIEN
+			AND CBS.ITEM_BIEN = EAD.ITEM_BIEN
+		WHERE EAL.ANO_EJE = 2022
+			AND EAL.SEC_EJEC = 1345
+			AND EAL.TIPO_TRANSAC = 9
+			AND EAL.TIPO_MOVIMTO='R'
+			AND EAL.ESTADO = 2 /* 2= VB HJefe */
+			AND (EAL.FLAG_RECEPCION IS NULL OR EAL.FLAG_RECEPCION = 'P') /* P=Parcial */
+			AND (0 = 754 OR EAL.NRO_REQUERIM = 754)
+		) T WHERE
+			T.CANT_ARTICULO - T.CANT_USADA > 0
+
+
+/**********************************************************************************************************************************/
+/*
+INSERT INTO sig_detalle_movim_ppto ( ano_eje , sec_ejec , almacen , sec_almacen , tipo_movimto , tipo_transac , tipo_ppto , nro_movimto , 
+secuencia , sec_detalle , sec_ppto , operacion , clasificador , tipo_destino , modal_destino , sec_func , act_proy , origen , fuente_financ , 
+tipo_recurso , cant_articulo , fecha_reg ) 
+VALUES ( 2022 , 1345 , '001' , '121' , 'R' , 1 , 1 , 1159 , 1 , 1 , 1 , 0 , '2.3. 1  8. 1  2' , '' , '' , 475 , '3' , '1' , '00' , '' , 
+255070.0000 , '5-25-2022 12:57:5.480') */
+
+
+INSERT INTO sig_detalle_movim_ppto ( ano_eje , sec_ejec , almacen , sec_almacen , tipo_movimto , tipo_transac , tipo_ppto , nro_movimto , 
+secuencia , sec_detalle , sec_ppto , operacion , clasificador , tipo_destino , modal_destino , sec_func , act_proy , origen , fuente_financ , 
+tipo_recurso , cant_articulo , fecha_reg ) 
+
+SELECT 
+			@ANO_EJE AS 'ANO_EJE', @SEC_EJEC AS 'SEC_EJEC', @almacen AS 'ALMACEN',  @SEC_ALMACEN AS 'SEC_ALMACEN', 
+			@TIPO_MOVIMTO AS 'TIPO_MOVIMTO', @TIPO_TRANSAC AS 'TIPO_TRANSAC', @tipo_ppto AS 'tipo_ppto' , @nro_mvimto AS 'nro_mvimto',
+			1 'secuencia',
+			d.sec_item,d.SEC_ITEM_PPTO, 0,d.CLASIFICADOR,'','',d.SEC_FUNC,'3',d.ORIGEN,d.FUENTE_FINANC,d.TIPO_RECURSO,(c.cant_item + c.cant_modif -c.cant_recibida),@FECHA_REG
+			FROM 
+				sig_orden_adquisicion a
+					left join SIG_ORDEN_SECUENCIA b
+							on 
+								a.ano_eje		=	b.ano_eje 
+							AND a.sec_ejec		=	b.sec_ejec 
+							AND a.nro_orden		=	b.nro_orden 
+							AND a.tipo_bien		=	b.tipo_bien 
+					left join SIG_ORDEN_ITEM c
+						on 
+							b.ano_eje		=	c.ano_eje 
+						AND b.sec_ejec		=	c.sec_ejec 
+						AND b.nro_orden		=	c.nro_orden 
+						AND b.tipo_bien		=	c.tipo_bien 
+						AND b.tipo_ppto		=	c.tipo_ppto
+						AND b.sec_orden		=	c.sec_orden	
+					left join sig_orden_item_ppto d
+							on 
+								a.ano_eje		=	d.ano_eje 
+							AND a.sec_ejec		=	d.sec_ejec 
+							AND a.nro_orden		=	d.nro_orden 
+							AND a.tipo_bien		=	d.tipo_bien 
+				WHERE 
+							a.ano_eje		=	@ANO_EJE
+					AND		a.sec_ejec		=	@SEC_EJEC
+					AND		a.nro_orden		=	@NRO_ORDEN
+					AND		a.tipo_bien		=	'B' 
+					AND		a.tipo_ppto		=	@tipo_ppto
+
+/**********************************************************************************************************************************/
+/*
+INSERT INTO sig_detalle_cta_almacen ( sec_ejec , ano_eje , almacen , sec_almacen , tipo_movimto , tipo_transac , tipo_ppto , nro_movimto , secuencia , sec_detalle , sec_ppto , sec_cuenta , mayor , sub_cta , tipo_d_h , ind_alma , valor_cuenta ) 
+VALUES ( 1345 , 2022 , '001' , '121' , 'R' , 1 , 1 , 1159 , 1 , 1 , 1 , 1 , '1301' , '080102' , 'D' , '1' , 282362.60 ) */
+
+INSERT INTO sig_detalle_cta_almacen ( sec_ejec , ano_eje , almacen , sec_almacen , tipo_movimto , tipo_transac , 
+tipo_ppto , nro_movimto , secuencia , sec_detalle , sec_ppto , sec_cuenta , mayor , sub_cta , tipo_d_h , ind_alma , valor_cuenta )
+
+SELECT 
+			@SEC_EJEC AS 'SEC_EJEC',@ANO_EJE AS 'ANO_EJE', @almacen AS 'ALMACEN',  @SEC_ALMACEN AS 'SEC_ALMACEN', 
+			@TIPO_MOVIMTO AS 'TIPO_MOVIMTO', @TIPO_TRANSAC AS 'TIPO_TRANSAC', @tipo_ppto AS 'tipo_ppto' , @nro_mvimto AS 'nro_mvimto',
+			1 'secuencia',
+			d.sec_item,d.SEC_ITEM_PPTO, 1,e.mayor , e.sub_cta,'D' , '1',(c.cant_item + c.cant_modif -c.cant_recibida)
+			FROM 
+				sig_orden_adquisicion a
+					left join SIG_ORDEN_SECUENCIA b
+							on 
+								a.ano_eje		=	b.ano_eje 
+							AND a.sec_ejec		=	b.sec_ejec 
+							AND a.nro_orden		=	b.nro_orden 
+							AND a.tipo_bien		=	b.tipo_bien 
+					left join SIG_ORDEN_ITEM c
+						on 
+							b.ano_eje		=	c.ano_eje 
+						AND b.sec_ejec		=	c.sec_ejec 
+						AND b.nro_orden		=	c.nro_orden 
+						AND b.tipo_bien		=	c.tipo_bien 
+						AND b.tipo_ppto		=	c.tipo_ppto
+						AND b.sec_orden		=	c.sec_orden	
+					left join sig_orden_item_ppto d
+							on 
+								a.ano_eje		=	d.ano_eje 
+							AND a.sec_ejec		=	d.sec_ejec 
+							AND a.nro_orden		=	d.nro_orden 
+							AND a.tipo_bien		=	d.tipo_bien
+					left join sig_familia_cuenta_ejecutora e
+						on 
+								c.ano_eje		=	e.ano_eje 
+							AND c.tipo_bien		=	e.tipo_bien 
+							AND c.GRUPO_BIEN	=	e.grupo_bien
+							AND c.CLASE_BIEN	=	e.CLASE_BIEN
+							AND c.FAMILIA_BIEN	=	e.FAMILIA_BIEN
+							AND a.TIPO_USO		=	e.TIPO_USO
+							AND d.CLASIFICADOR	=	e.CLASIFICADOR
+				WHERE 
+							a.ano_eje		=	@ANO_EJE
+					AND		a.sec_ejec		=	@SEC_EJEC
+					AND		a.nro_orden		=	@NRO_ORDEN
+					AND		a.tipo_bien		=	'B' 
+					AND		a.tipo_ppto		=	@tipo_ppto
+
+-- ACTUALIZACION DE CAMPOS 
+/**/
+
+update sig_detalle_item_almacen set especificaciones = ' ' 
+WHERE ano_eje =@ANO_EJE and sec_ejec =@SEC_EJEC and almacen =@almacen and sec_almacen =@SEC_ALMACEN and tipo_movimto =@TIPO_MOVIMTO 
+and tipo_transac =@TIPO_TRANSAC and tipo_ppto =@tipo_ppto and nro_movimto =@nro_mvimto and secuencia =1 and sec_item =1 
+
+update sig_orden_item SET flag_recep ='3' , cant_recibida =cant_item + sig_orden_item.cant_modif , fecha_recep =@FECHA_MOVIMTO
+WHERE ano_eje = @ANO_EJE AND sec_ejec =@SEC_EJEC AND nro_orden =@NRO_ORDEN AND tipo_bien ='B' AND tipo_ppto =@tipo_ppto
+AND sec_orden =1 AND ( flag_recep <> '3' or flag_recep is null ) 
+
+update sig_orden_adquisicion SET flag_almacen ='3' 
+WHERE ano_eje =@ANO_EJE AND sec_ejec =@SEC_EJEC AND nro_orden =@NRO_ORDEN AND tipo_bien ='B' AND tipo_ppto =@tipo_ppto
+
+update sig_detalle_movim_almacen SET fecha_movimto =@FECHA_MOVIMTO
+WHERE ano_eje =@ANO_EJE AND sec_ejec =@SEC_EJEC AND almacen =@almacen AND sec_almacen =@SEC_ALMACEN AND tipo_movimto =@TIPO_MOVIMTO 
+AND tipo_transac = @TIPO_TRANSAC AND tipo_ppto =@tipo_ppto AND nro_movimto =@nro_mvimto AND secuencia =1 
+
+update sig_orden_item SET fecha_recep =( SELECT MAX ( sig_movim_almacen.fecha_movimto ) 
+FROM sig_detalle_movim_almacen , sig_movim_almacen 
+WHERE sig_detalle_movim_almacen.ano_eje =sig_movim_almacen.ano_eje 
+and sig_detalle_movim_almacen.sec_ejec =sig_movim_almacen.sec_ejec 
+and sig_detalle_movim_almacen.almacen =sig_movim_almacen.almacen 
+and sig_detalle_movim_almacen.sec_almacen =sig_movim_almacen.sec_almacen 
+and sig_detalle_movim_almacen.tipo_movimto =sig_movim_almacen.tipo_movimto 
+and sig_detalle_movim_almacen.tipo_transac =sig_movim_almacen.tipo_transac 
+and sig_detalle_movim_almacen.tipo_ppto =sig_movim_almacen.tipo_ppto 
+and sig_detalle_movim_almacen.nro_movimto =sig_movim_almacen.nro_movimto 
+and sig_movim_almacen.ano_orden =sig_orden_item.ano_eje 
+and sig_movim_almacen.nro_orden =sig_orden_item.nro_orden 
+and sig_detalle_movim_almacen.sec_ejec =sig_orden_item.sec_ejec 
+and sig_movim_almacen.tipo_bien =sig_orden_item.tipo_bien 
+and sig_detalle_movim_almacen.sec_item =sig_orden_item.sec_item ) 
+WHERE ano_eje =@ANO_EJE AND sec_ejec =@SEC_EJEC AND nro_orden =@NRO_ORDEN AND tipo_bien ='B' AND tipo_ppto =@tipo_ppto AND sec_orden =1 
+
+
+/****************************************************************************************************************/
+-- QUERY DE CREACION Y ACTUALIZACION
+DECLARE @sec_item_aux AS numeric(10)
+
+DECLARE ProdInfo CURSOR FOR select SEC_ITEM from sig_detalle_movim_almacen 
+where ANO_EJE=@ANO_EJE and NRO_MOVIMTO in (@nro_mvimto) AND tipo_movimto =@TIPO_MOVIMTO AND tipo_transac =@TIPO_TRANSAC and ALMACEN = @almacen AND SEC_ALMACEN =@SEC_ALMACEN
+
+OPEN ProdInfo
+FETCH NEXT FROM ProdInfo INTO @sec_item_aux
+
+WHILE @@fetch_status = 0
+
+BEGIN
+    --PRINT @sec_item	
+	-- DATOS DE LA TABLA A
+	declare @MaximoMarca int = (select max ( marca ) + 1 from marca where tipo_marca ='1' AND marca <> 328 and ( marca not between 20000 and 30000 ))
+	
+	--insert into @tablaA (id) values (@MaximoTablaA)
+	insert into marca ( tipo_marca, marca, nombre, estado, fecha_alta ) values ('1',@MaximoMarca,'PRUEBA HIB', 'A', '6-1-2022 17:31:2.389' )	   	
+	
+	update sig_detalle_movim_almacen set MARCA = @MaximoMarca 
+	where ANO_EJE=@ANO_EJE and NRO_MOVIMTO in (@nro_mvimto) AND tipo_movimto =@TIPO_MOVIMTO AND tipo_transac =@TIPO_TRANSAC and ALMACEN = @almacen AND SEC_ALMACEN =@SEC_ALMACEN
+	and SEC_ITEM = @sec_item_aux
+	FETCH NEXT FROM ProdInfo INTO @sec_item_aux
+END
+CLOSE ProdInfo
+DEALLOCATE ProdInfo
+
+
+-- Retornar pk de la operacion de insertar movimiento de recepcion 
+select @nro_mvimto
+
+
+COMMIT TRANSACTION;
+end
+
+-- CUBO DE INFORMACION DE CONTRATOS  
+---------------------------------------------------------------------------
+ALTER PROCEDURE SP_WMS_CONSULTA_CONTRATOS_X_UE(
+	@I_SEC_EJEC int
+	
+)
+AS
+BEGIN
+
+SELECT DISTINCT RTRIM(A.ANO_CONTRATO) + '-' + A.NRO_CONTRATO NRO_CONTRATO FROM SIG_ORDEN_ADQUISICION A WHERE 
+			A.SEC_EJEC		=	@I_SEC_EJEC 
+	AND		A.TIPO_BIEN		=	'B' 
+	AND		A.TIPO_PROCESO	<>	14
+	AND		A.NRO_CONTRATO	IS NOT NULL	
+	AND		A.ANO_CONTRATO	IS NOT NULL
+	AND		A.ANO_CONTRATO > 2019
+END 
+
+USE [SIGA_1345]
+GO
+/****** Object:  StoredProcedure [dbo].[SP_WMS_CONSULTA_ORDEN_COMPRA]    Script Date: 11/07/2022 20:22:22 ******/
+SET ANSI_NULLS ON
+GO
+SET QUOTED_IDENTIFIER ON
+GO
+exec [SP_WMS_CONSULTA_ORDEN_COMPRA] 2022,1345,4096
+ALTER PROCEDURE [dbo].[SP_WMS_CONSULTA_ORDEN_COMPRA](
+	@I_ANO_EJE int,
+	@I_SEC_EJEC int,
+	@I_NRO_ORDEN int
+	
+)
+AS
+BEGIN
+
+	SELECT  
+					sig_orden_adquisicion.ano_eje		,  
+					sig_orden_adquisicion.tipo_proceso	,
+					CASE WHEN sig_orden_adquisicion.tipo_proceso IN (25) THEN 'INTERNACIONAL' ELSE 'NACIONAL' END NACIONALIDAD ,
+					C.DESCRIPCION DES_TIPO_PROCESO,C.DESCRIPCION_ABREVIADA,
+					sig_orden_adquisicion.nro_orden		,  
+					sig_orden_adquisicion.ANO_CONTRATO	,
+					sig_orden_adquisicion.NRO_CONTRATO	,
+					sig_orden_adquisicion.FECHA_CONTRATO,
+					sig_orden_adquisicion.tipo_bien		, 
+					sig_orden_adquisicion.proveedor		,  
+					sig_contratistas.nombre_prov		,       
+					sig_orden_adquisicion.moneda		,         
+					sig_orden_adquisicion.fecha_orden	,          
+					sig_orden_adquisicion.almacen		,   
+					B.NOMBRE_ALM,
+					sig_orden_adquisicion.sec_almacen	,   
+					B.descripcion,
+					B.nombre_sede,
+					sig_orden_adquisicion.tipo_cambio ,    					
+					sig_orden_adquisicion.total_fact_moneda  
+		FROM 
+					sig_orden_adquisicion
+							LEFT OUTER JOIN sig_contratistas 
+								ON		
+									sig_orden_adquisicion.proveedor = sig_contratistas.proveedor   
+							LEFT OUTER JOIN 
+							(SELECT	sig_almacen.almacen			,           
+							sig_almacen.sec_almacen		,           
+							sig_almacen.nombre_alm		,           
+							'' as descripcion			,           
+							sig_sedes.nombre_sede		,           
+							sig_almacen.empleado		,           
+							sig_almacen.flag_sismed     
+				FROM		
+							sig_almacen					,           
+							sig_sedes     
+				WHERE		
+									( sig_sedes.sede = sig_almacen.sede ) 
+							and		( sig_sedes.pliego = sig_almacen.pliego ) 
+							and     ( ( sig_almacen.sec_ejec = @I_SEC_EJEC ) 
+							and     ( sig_almacen.sec_almacen = '000' ) 
+							and     ((1 = -1) or          (1 <> -1 
+							And     ( sig_almacen.tipo_ppto = 1)) ) 
+							and     (('%' = '%') or          ('%' <> '%' And          
+								(  
+									exists 
+										(SELECT cuser_id 
+											FROM sig_usuario_almacen 
+												WHERE		cuser_id = '%' 
+														AND sec_ejec = @I_SEC_EJEC 
+														AND almacen = sig_almacen.almacen 
+														AND sec_almacen = sig_almacen.sec_almacen))) ) )    
+											UNION    
+												SELECT 
+														sig_almacen_a.almacen		,           
+														sig_almacen_a.sec_almacen	,          
+														sig_almacen_b.nombre_alm	,           
+														sig_almacen_a.nombre_alm	,           
+														sig_sedes.nombre_sede		,           
+														sig_almacen_a.empleado		,           
+														sig_almacen_a.flag_sismed      
+												FROM 
+														sig_almacen sig_almacen_a	,          
+														sig_almacen sig_almacen_b	,           
+														sig_sedes     
+												WHERE 
+																( sig_almacen_a.sec_ejec = sig_almacen_b.sec_ejec ) 
+														and     ( sig_almacen_a.almacen = sig_almacen_b.almacen ) 
+														and     ( sig_sedes.sede = sig_almacen_a.sede ) 
+														and     ( sig_sedes.pliego = sig_almacen_a.pliego ) 
+														and     ( ( sig_almacen_a.sec_ejec = 1345 ) 
+														and     ( sig_almacen_a.sec_almacen <> '000' ) 
+														and     ( sig_almacen_b.sec_almacen = '000' ) 
+														and     ((1 = -1) or				(1 <> -1 And          ( sig_almacen_a.tipo_ppto = 1)) )
+														and     (('%' = '%') or          ('%' <> '%' And         
+														(  
+															exists 
+															(SELECT cuser_id 
+																FROM sig_usuario_almacen 
+																	WHERE		 cuser_id = '%' 
+																			AND sec_ejec = @I_SEC_EJEC
+																			AND almacen = sig_almacen_a.almacen
+																			AND sec_almacen = sig_almacen_a.sec_almacen))) ) ) ) B
+							ON
+									sig_orden_adquisicion.almacen		=     B.ALMACEN     
+								AND sig_orden_adquisicion.sec_almacen	= B.SEC_ALMACEN
+					INNER JOIN SIG_MAESTRO_PROCESO	AS C
+									ON		sig_orden_adquisicion.ANO_EJE		=	C.ANO_EJE
+									AND		sig_orden_adquisicion.TIPO_PROCESO	=	C.CODIGO_DET
+		WHERE 
+								( sig_orden_adquisicion.ano_eje = @I_ANO_EJE ) 
+					And     ( sig_orden_adquisicion.estado = '1' ) 
+					and     ( sig_orden_adquisicion.sec_ejec = @I_SEC_EJEC ) 
+					and     ( sig_orden_adquisicion.tipo_bien = 'B' ) 
+					And     ( sig_orden_adquisicion.tipo_ppto = 1 ) 
+					and     ( sig_orden_adquisicion.mes_calend >= '01' )
+					and     ( sig_orden_adquisicion.mes_calend <= '12' ) 
+					and		( sig_orden_adquisicion.nro_orden = CASE WHEN @I_NRO_ORDEN IN (0) THEN sig_orden_adquisicion.nro_orden ELSE @I_NRO_ORDEN END  ) 
+		ORDER BY 
+					sig_orden_adquisicion.nro_orden
+
+END
+USE [SIGA_1345]
+GO
+/****** Object:  StoredProcedure [dbo].[SP_WMS_CATALOGO_BIENES_Y_SERVICIOS]    Script Date: 11/07/2022 20:22:07 ******/
+SET ANSI_NULLS ON
+GO
+SET QUOTED_IDENTIFIER ON
+GO
+ALTER PROCEDURE [dbo].[SP_WMS_CATALOGO_BIENES_Y_SERVICIOS](
+	@I_SEC_EJEC int
+)
+AS
+
+BEGIN
+
+SELECT A.TIPO_BIEN,	A.CODIGO_ITEM, CASE WHEN A.TIPO_BIEN IN ('B') THEN 'BIEN' ELSE 'SERVICIO' END DESCRIPCION,
+	   A.GRUPO_BIEN,B.NOMBRE_GRUPO,ISNULL(B.ALCANCE_GRUPO,'----')	 ALCANCE_GRUPO,
+	   A.CLASE_BIEN,C.NOMBRE_CLASE,ISNULL(C.ALCANCE_CLASE,'----')	 ALCANCE_CLASE,
+	   A.FAMILIA_BIEN,D.NOMBRE_FAM,ISNULL(D.ALCANCE_FAM,'----')		 ALCANCE_FAM,
+	   A.ITEM_BIEN,A.NOMBRE_ITEM,A.UNIDAD_MEDIDA,
+	   A.ESTADO
+				FROM CATALOGO_BIEN_SERV AS A
+					INNER JOIN GRUPO_BIEN_SERV AS B
+						ON		A.TIPO_BIEN		=	B.TIPO_BIEN
+							AND A.GRUPO_BIEN	=	B.GRUPO_BIEN
+					INNER JOIN CLASE_BIEN_SERV AS C
+						ON		A.TIPO_BIEN		=	C.TIPO_BIEN
+							AND A.GRUPO_BIEN	=	C.GRUPO_BIEN
+							AND A.CLASE_BIEN	=	C.CLASE_BIEN
+					INNER JOIN FAMILIA_BIEN_SERV AS D
+						ON		A.TIPO_BIEN		=	D.TIPO_BIEN
+							AND A.GRUPO_BIEN	=	D.GRUPO_BIEN
+							AND A.CLASE_BIEN	=	D.CLASE_BIEN
+							AND A.FAMILIA_BIEN	=	D.FAMILIA_BIEN
+		WHERE
+			A.ESTADO	=	'A'
+			AND A.SEC_EJEC=@I_SEC_EJEC
+
+
+END
+
+USE [SIGA_1345]
+GO
+/****** Object:  StoredProcedure [dbo].[SP_WMS_CONSULTA_CONTRATOS]    Script Date: 11/07/2022 20:22:09 ******/
+SET ANSI_NULLS ON
+GO
+SET QUOTED_IDENTIFIER ON
+GO
+
+--exec [SP_WMS_CONSULTA_CONTRATOS] 2022,'2022-CCP SIAF 1704'
+
+ALTER PROCEDURE [dbo].[SP_WMS_CONSULTA_CONTRATOS](
+	@I_ANO_EJE int,
+	@I_NRO_CONTRATO char(40)
+	
+)
+AS
+BEGIN
+
+SELECT	A.ANO_EJE,A.SEC_EJEC,A.TIPO_BIEN,A.NRO_ORDEN,
+		A.PROVEEDOR,B.NRO_RUC,B.NOMBRE_PROV,
+		A.MES_CALEND,A.FECHA_ORDEN,
+		A.ANO_CONTRATO,A.NRO_CONTRATO,A.FECHA_CONTRATO,
+		A.TIPO_PROCESO,C.DESCRIPCION DES_TIPO_PROCESO,C.DESCRIPCION_ABREVIADA,
+		A.ALMACEN,A.SEC_ALMACEN
+	FROM			SIG_ORDEN_ADQUISICION	AS		A 
+		INNER JOIN	SIG_CONTRATISTAS		AS		B
+			ON		A.PROVEEDOR		=	B.PROVEEDOR
+		INNER JOIN SIG_MAESTRO_PROCESO	AS C
+			ON		A.ANO_EJE		=	C.ANO_EJE
+			AND		A.TIPO_PROCESO	=	C.CODIGO_DET
+		WHERE			
+						A.ANO_EJE		=	@I_ANO_EJE
+				AND		A.SEC_EJEC		=	1345 
+				AND		A.TIPO_BIEN		=	'B' 
+				AND		A.TIPO_PROCESO	<>	14
+				AND		A.NRO_CONTRATO	IS NOT NULL	
+				AND		A.ANO_CONTRATO	IS NOT NULL
+				AND		A.NRO_CONTRATO like  rtrim(SUBSTRING(@I_NRO_CONTRATO, 6, 20))
+				
+
+/*SELECT	A.ANO_EJE,A.SEC_EJEC,A.NRO_CONTRATO,A.SEC_CONTRATO,
+		CASE WHEN A.TIPO_BIEN IN ('B') THEN 'BIEN' ELSE 'SERVICIO' END DESCRIPCION ,
+		A.TIPO_PROVEEDOR,A.PROVEEDOR,
+		B.NRO_RUC , B.NOMBRE_PROV,
+		A.FECHA,A.FECHA_FINAL,A.FECHA_FINAL,A.MONEDA,
+		A.NRO_DOCUMENTO,A.ESPEC_TECNICAS,
+		A.TIPO_PROCESO,C.DESCRIPCION DES_TIPO_PROCESO,C.DESCRIPCION_ABREVIADA,
+		A.ID_PROCESO,A.ID_CONTRATO,
+		A.ANO_PROCESO,A.NRO_PROCESO,A.VALOR_MONEDA
+	FROM SIG_CONTRATOS AS A
+		INNER JOIN SIG_CONTRATISTAS		AS B
+			ON		A.PROVEEDOR		=	B.PROVEEDOR
+		INNER JOIN SIG_MAESTRO_PROCESO	AS C
+			ON		A.ANO_EJE		=	C.ANO_EJE
+			AND		A.TIPO_PROCESO	=	C.CODIGO_DET
+		WHERE 
+					A.ANO_EJE=@I_ANO_EJE
+			AND		A.NRO_CONTRATO	IN (@I_NRO_CONTRATO)*/
+
+END 
+
+USE [SIGA_1345]
+GO
+/****** Object:  StoredProcedure [dbo].[SP_WMS_CONSULTA_CONTRATOS_X_UE]    Script Date: 11/07/2022 20:22:11 ******/
+SET ANSI_NULLS ON
+GO
+SET QUOTED_IDENTIFIER ON
+GO
+
+-- CUBO DE INFORMACION DE CONTRATOS  
+---------------------------------------------------------------------------
+ALTER PROCEDURE [dbo].[SP_WMS_CONSULTA_CONTRATOS_X_UE](
+	@I_SEC_EJEC int
+	
+)
+AS
+BEGIN
+
+SELECT DISTINCT RTRIM(A.ANO_CONTRATO) + '-' + A.NRO_CONTRATO NRO_CONTRATO FROM SIG_ORDEN_ADQUISICION A WHERE 
+			A.SEC_EJEC		=	@I_SEC_EJEC 
+	AND		A.TIPO_BIEN		=	'B' 
+	AND		A.TIPO_PROCESO	<>	14
+	AND		A.NRO_CONTRATO	IS NOT NULL	
+	AND		A.ANO_CONTRATO	IS NOT NULL
+	AND		A.ANO_CONTRATO > 2019
+END 
+
+USE [SIGA_1345]
+GO
+/****** Object:  StoredProcedure [dbo].[SP_WMS_CONSULTA_ITEM_X_PROVEEDOR]    Script Date: 11/07/2022 20:22:15 ******/
+SET ANSI_NULLS ON
+GO
+SET QUOTED_IDENTIFIER ON
+GO
+
+
+-- CUBO DE INFORMACION DE ITEM POR PROVEEDOR 
+------------------------------------------------------
+ALTER PROCEDURE [dbo].[SP_WMS_CONSULTA_ITEM_X_PROVEEDOR] (
+	@I_SEC_EJEC int	
+)
+AS
+BEGIN
+
+SELECT	A.PROVEEDOR,A.NRO_RUC,A.NOMBRE_PROV,
+		A.GRUPO_BIEN,A.CLASE_BIEN,A.FAMILIA_BIEN,A.ITEM_BIEN,A.ITEM,B.NOMBRE_ITEM
+FROM 
+(
+SELECT	DISTINCT A.PROVEEDOR,B.NRO_RUC,B.NOMBRE_PROV,
+		C.GRUPO_BIEN,C.CLASE_BIEN,C.FAMILIA_BIEN,C.ITEM_BIEN
+		,C.GRUPO_BIEN +	C.CLASE_BIEN + C.FAMILIA_BIEN + C.ITEM_BIEN ITEM
+	
+	FROM			SIG_ORDEN_ADQUISICION	AS		A 
+		INNER JOIN	SIG_CONTRATISTAS		AS		B
+			ON		A.PROVEEDOR		=	B.PROVEEDOR
+		INNER JOIN	SIG_ORDEN_ITEM			AS		C
+			ON		A.ANO_EJE		=	C.ANO_EJE
+			AND		A.SEC_EJEC		=	C.SEC_EJEC
+			AND		A.NRO_ORDEN		=	C.NRO_ORDEN
+			AND		A.TIPO_BIEN		=	C.TIPO_BIEN
+		WHERE			
+						A.ANO_EJE		IN (2019,2021,2022)
+				AND		A.SEC_EJEC		=	@I_SEC_EJEC 				
+				AND		A.TIPO_BIEN		=	'B' ) A
+		INNER JOIN 
+				(SELECT A.TIPO_BIEN,	A.CODIGO_ITEM, CASE WHEN A.TIPO_BIEN IN ('B') THEN 'BIEN' ELSE 'SERVICIO' END DESCRIPCION,
+					   A.GRUPO_BIEN,B.NOMBRE_GRUPO,ISNULL(B.ALCANCE_GRUPO,'----')	 ALCANCE_GRUPO,
+					   A.CLASE_BIEN,C.NOMBRE_CLASE,ISNULL(C.ALCANCE_CLASE,'----')	 ALCANCE_CLASE,
+					   A.FAMILIA_BIEN,D.NOMBRE_FAM,ISNULL(D.ALCANCE_FAM,'----')		 ALCANCE_FAM,
+					   A.ITEM_BIEN,A.NOMBRE_ITEM,
+					   A.ESTADO
+								FROM CATALOGO_BIEN_SERV AS A
+									INNER JOIN GRUPO_BIEN_SERV AS B
+										ON		A.TIPO_BIEN		=	B.TIPO_BIEN
+											AND A.GRUPO_BIEN	=	B.GRUPO_BIEN
+									INNER JOIN CLASE_BIEN_SERV AS C
+										ON		A.TIPO_BIEN		=	C.TIPO_BIEN
+											AND A.GRUPO_BIEN	=	C.GRUPO_BIEN
+											AND A.CLASE_BIEN	=	C.CLASE_BIEN
+									INNER JOIN FAMILIA_BIEN_SERV AS D
+										ON		A.TIPO_BIEN		=	D.TIPO_BIEN
+											AND A.GRUPO_BIEN	=	D.GRUPO_BIEN
+											AND A.CLASE_BIEN	=	D.CLASE_BIEN
+											AND A.FAMILIA_BIEN	=	D.FAMILIA_BIEN
+						WHERE
+							A.ESTADO	=	'A'
+							AND A.SEC_EJEC=@I_SEC_EJEC) B 
+				ON
+					A.ITEM	=	B.CODIGO_ITEM
+
+					
+END
